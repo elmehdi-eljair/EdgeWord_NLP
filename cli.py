@@ -35,35 +35,9 @@ RED = "\033[31m"
 MAGENTA = "\033[35m"
 RESET = "\033[0m"
 
-# --- Routing heuristics ---
-QUESTION_STARTERS = (
-    "who", "what", "when", "where", "why", "how", "which", "can", "could",
-    "would", "should", "is", "are", "was", "were", "do", "does", "did",
-    "will", "shall", "tell", "explain", "describe", "define", "list",
-    "summarize", "summarise", "compare", "write", "create", "generate",
-    "give", "show", "translate", "help", "suggest", "recommend",
-)
-
-
 def _softmax(x: np.ndarray) -> np.ndarray:
     e = np.exp(x - x.max(axis=-1, keepdims=True))
     return e / e.sum(axis=-1, keepdims=True)
-
-
-def is_question_or_prompt(text: str) -> bool:
-    """Decide if input is a question/instruction (-> generate) or a statement (-> classify)."""
-    stripped = text.strip().rstrip(".")
-    if stripped.endswith("?"):
-        return True
-    if stripped.endswith(":"):
-        return True
-    first_word = stripped.split()[0].lower().rstrip(",") if stripped else ""
-    if first_word in QUESTION_STARTERS:
-        return True
-    # Long inputs with multiple sentences are more likely prompts
-    if len(stripped) > 200:
-        return True
-    return False
 
 
 class FastPath:
@@ -182,10 +156,10 @@ def print_banner(has_compute: bool) -> None:
 ║          EdgeWord NLP — Interactive CLI           ║
 ╚══════════════════════════════════════════════════╝{RESET}
 """)
-    print(f"  Just type anything. The pipeline auto-detects what to do:")
-    print(f"    {GREEN}Statements{RESET}  → sentiment classification  {DIM}(Fast-Path, ONNX){RESET}")
+    print(f"  Type anything. Every input gets both:")
+    print(f"    {GREEN}Sentiment{RESET}   → classification result     {DIM}(Fast-Path, ONNX){RESET}")
     if has_compute:
-        print(f"    {CYAN}Questions{RESET}   → AI-generated answer      {DIM}(Compute-Path, llama.cpp){RESET}")
+        print(f"    {CYAN}Response{RESET}    → AI-generated answer      {DIM}(Compute-Path, llama.cpp){RESET}")
     print()
     print(f"  {BOLD}Commands:{RESET}")
     print(f"    {YELLOW}bench{RESET}    — run latency benchmark")
@@ -332,11 +306,10 @@ def main() -> None:
                 print(f"  {RED}Usage: /threads N{RESET}")
             continue
 
-        # --- Auto-route ---
-        if has_compute and is_question_or_prompt(raw):
+        # --- Always classify + always chat ---
+        fast.classify(raw)
+        if has_compute:
             compute.chat(raw, max_tokens=max_tokens, temperature=temperature)
-        else:
-            fast.classify(raw)
 
 
 if __name__ == "__main__":
