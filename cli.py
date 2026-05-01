@@ -1,7 +1,7 @@
 """
-EdgeWord NLP — Interactive CLI
-Type anything — the pipeline automatically classifies short statements
-and generates responses for questions/prompts.
+EdgeWord NLP — Interactive CLI with Conversation Memory
+Type anything — gets sentiment classification + AI response.
+The model remembers your conversation via LangChain memory.
 
 Usage:
     .venv/bin/python3 cli.py
@@ -34,6 +34,7 @@ CYAN = "\033[36m"
 RED = "\033[31m"
 MAGENTA = "\033[35m"
 RESET = "\033[0m"
+
 
 def _softmax(x: np.ndarray) -> np.ndarray:
     e = np.exp(x - x.max(axis=-1, keepdims=True))
@@ -90,9 +91,9 @@ class FastPath:
 
 
 class ComputePath:
-    """llama.cpp text generator."""
+    """llama.cpp text generator with LangChain conversation memory."""
 
-    def __init__(self, model_path: str, n_threads: int = 4):
+    def __init__(self, model_path: str, n_threads: int = 4, memory_k: int = 10):
         print(f"{DIM}Loading Compute-Path model...{RESET}", end=" ", flush=True)
         t0 = time.perf_counter()
         from llama_cpp import Llama
@@ -106,22 +107,39 @@ class ComputePath:
         )
         self.model_path = model_path
         self.n_threads = n_threads
+
+        # LangChain conversation memory — keeps last K exchanges
+        from langchain_core.messages import HumanMessage, AIMessage
+        self._HumanMessage = HumanMessage
+        self._AIMessage = AIMessage
+        self.memory_k = memory_k
+        self.history: list = []  # list of (HumanMessage, AIMessage)
+
         elapsed = time.perf_counter() - t0
-        print(f"{GREEN}ready{RESET} {DIM}({elapsed:.1f}s, {n_threads} threads){RESET}")
+        print(f"{GREEN}ready{RESET} {DIM}({elapsed:.1f}s, {n_threads} threads, memory={memory_k} turns){RESET}")
+
+    def _build_prompt(self, user_message: str) -> str:
+        """Build a prompt that includes conversation history from LangChain memory."""
+        prompt = "<|im_start|>system\nYou are a helpful assistant. Be concise and clear.<|im_end|>\n"
+
+        # Inject past conversation turns from memory
+        for human_msg, ai_msg in self.history[-self.memory_k:]:
+            prompt += f"<|im_start|>user\n{human_msg.content}<|im_end|>\n"
+            prompt += f"<|im_start|>assistant\n{ai_msg.content}<|im_end|>\n"
+
+        prompt += f"<|im_start|>user\n{user_message}<|im_end|>\n"
+        prompt += "<|im_start|>assistant\n"
+        return prompt
 
     def chat(self, message: str, max_tokens: int = 256, temperature: float = 0.7) -> None:
-        prompt = (
-            "<|im_start|>system\n"
-            "You are a helpful assistant. Be concise and clear.<|im_end|>\n"
-            f"<|im_start|>user\n{message}<|im_end|>\n"
-            "<|im_start|>assistant\n"
-        )
+        prompt = self._build_prompt(message)
 
-        sys.stdout.write(f"\n  {DIM}[chat]{RESET} {CYAN}")
+        sys.stdout.write(f"  {DIM}[chat]{RESET} {CYAN}")
         sys.stdout.flush()
 
         first_token_time = None
         token_count = 0
+        response_parts = []
         t0 = time.perf_counter()
 
         stream = self.llm.create_completion(
@@ -139,6 +157,7 @@ class ComputePath:
             if first_token_time is None:
                 first_token_time = time.perf_counter() - t0
             token_count += 1
+            response_parts.append(tok)
             sys.stdout.write(tok)
             sys.stdout.flush()
 
@@ -148,6 +167,26 @@ class ComputePath:
 
         sys.stdout.write(RESET)
         print(f"\n\n  {DIM}{token_count} tokens · {tps:.1f} t/s · TTFT {ttft:.3f}s{RESET}\n")
+
+        # Save this exchange to LangChain memory
+        response_text = "".join(response_parts).strip()
+        self.history.append((
+            self._HumanMessage(content=message),
+            self._AIMessage(content=response_text),
+        ))
+
+    def clear_memory(self) -> None:
+        self.history.clear()
+
+    def show_memory(self) -> None:
+        if not self.history:
+            print(f"  {DIM}(no conversation history){RESET}\n")
+        else:
+            print(f"\n  {BOLD}Conversation Memory ({len(self.history)} turns):{RESET}")
+            for i, (human, ai) in enumerate(self.history, 1):
+                print(f"  {DIM}[{i}] User:{RESET} {human.content[:80]}{'...' if len(human.content) > 80 else ''}")
+                print(f"  {DIM}    AI:{RESET}   {ai.content[:80]}{'...' if len(ai.content) > 80 else ''}")
+            print()
 
 
 def print_banner(has_compute: bool) -> None:
@@ -160,12 +199,15 @@ def print_banner(has_compute: bool) -> None:
     print(f"    {GREEN}Sentiment{RESET}   → classification result     {DIM}(Fast-Path, ONNX){RESET}")
     if has_compute:
         print(f"    {CYAN}Response{RESET}    → AI-generated answer      {DIM}(Compute-Path, llama.cpp){RESET}")
+        print(f"    {MAGENTA}Memory{RESET}      → conversation is remembered {DIM}(LangChain){RESET}")
     print()
     print(f"  {BOLD}Commands:{RESET}")
-    print(f"    {YELLOW}bench{RESET}    — run latency benchmark")
-    print(f"    {YELLOW}quit{RESET}     — exit")
+    print(f"    {YELLOW}bench{RESET}      — run latency benchmark")
     if has_compute:
+        print(f"    {YELLOW}memory{RESET}     — show conversation history")
+        print(f"    {YELLOW}clear{RESET}      — clear conversation memory")
         print(f"    {YELLOW}/tokens N{RESET}  /temp N  /threads N  — tune generation")
+    print(f"    {YELLOW}quit{RESET}       — exit")
     print()
 
 
@@ -227,6 +269,7 @@ def main() -> None:
     parser.add_argument("--model", type=str, help="Path to GGUF model for generation")
     parser.add_argument("--fast-only", action="store_true", help="Classification only, skip generation")
     parser.add_argument("--threads", type=int, default=4, help="Thread count for generation (default: 4)")
+    parser.add_argument("--memory", type=int, default=10, help="Number of conversation turns to remember (default: 10)")
     args = parser.parse_args()
 
     # --- Load backends ---
@@ -238,13 +281,13 @@ def main() -> None:
         if not Path(args.model).exists():
             print(f"{RED}Model not found: {args.model}{RESET}")
             sys.exit(1)
-        compute = ComputePath(args.model, n_threads=args.threads)
+        compute = ComputePath(args.model, n_threads=args.threads, memory_k=args.memory)
     elif not args.fast_only:
         from pathlib import Path
         models_dir = Path(__file__).parent / "models"
         ggufs = sorted(models_dir.glob("*.gguf")) if models_dir.exists() else []
         if ggufs:
-            compute = ComputePath(str(ggufs[0]), n_threads=args.threads)
+            compute = ComputePath(str(ggufs[0]), n_threads=args.threads, memory_k=args.memory)
         else:
             print(f"{YELLOW}No GGUF model found — generation disabled.{RESET}")
             print(f"{DIM}Use --model path/to/model.gguf or place a .gguf in ./models/{RESET}\n")
@@ -277,6 +320,13 @@ def main() -> None:
         if low == "bench":
             run_bench(fast, compute)
             continue
+        if low == "memory" and has_compute:
+            compute.show_memory()
+            continue
+        if low == "clear" and has_compute:
+            compute.clear_memory()
+            print(f"  {DIM}Conversation memory cleared.{RESET}\n")
+            continue
         if low.startswith("/tokens "):
             try:
                 max_tokens = int(raw.split()[1])
@@ -299,8 +349,10 @@ def main() -> None:
                 n = int(raw.split()[1])
                 print(f"  {DIM}Reloading model with {n} threads...{RESET}")
                 mp = compute.model_path
+                old_memory = compute.memory
                 del compute
-                compute = ComputePath(mp, n_threads=n)
+                compute = ComputePath(mp, n_threads=n, memory_k=args.memory)
+                compute.memory = old_memory  # preserve conversation across reload
                 has_compute = True
             except (ValueError, IndexError):
                 print(f"  {RED}Usage: /threads N{RESET}")
