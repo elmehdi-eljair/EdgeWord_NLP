@@ -6,7 +6,7 @@ import { Message, Attachment, HealthStatus } from "@/lib/types";
 import {
   MicIcon, PaperclipIcon, ImageIcon, SendIcon, StopIcon,
   CopyIcon, RefreshIcon, SpeakerIcon, GearIcon, XIcon,
-  FileIcon, PlayIcon, PauseIcon,
+  FileIcon, PlayIcon, PauseIcon, LogoutIcon,
 } from "@/lib/icons";
 import AuthPage from "@/components/AuthPage";
 
@@ -477,15 +477,21 @@ export default function Home() {
             style={{ background: "linear-gradient(135deg, #7B3FEE 0%, #B85AEE 50%, #E832B8 100%)" }} />
           <span className="hidden sm:block text-[15px] font-bold text-ink" style={{ letterSpacing: "-0.02em" }}>EdgeWord</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1">
           {health && (
-            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-green">
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-green mr-2">
               <span className="w-[6px] h-[6px] rounded-full bg-green animate-pulse" />
               <span className="hidden sm:inline">Online</span>
             </span>
           )}
-          <button onClick={() => setSettingsOpen(true)} className="p-2 text-ink-4 hover:text-ink hover:bg-bg rounded-lg transition-colors">
-            <GearIcon size={17} />
+          <button onClick={() => location.reload()} title="Refresh" className="p-2 text-ink-4 hover:text-violet-500 hover:bg-violet-50 rounded-lg transition-colors">
+            <RefreshIcon size={16} />
+          </button>
+          <button onClick={() => setSettingsOpen(true)} title="Settings" className="p-2 text-ink-4 hover:text-violet-500 hover:bg-violet-50 rounded-lg transition-colors">
+            <GearIcon size={16} />
+          </button>
+          <button onClick={() => { api.logout(); setAuthed(false); }} title="Sign out" className="p-2 text-ink-4 hover:text-red hover:bg-red-bg rounded-lg transition-colors">
+            <LogoutIcon size={16} />
           </button>
         </div>
       </header>
