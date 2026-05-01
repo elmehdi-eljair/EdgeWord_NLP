@@ -108,6 +108,13 @@ class ComputePath:
         self.model_path = model_path
         self.n_threads = n_threads
 
+        # Detect chat template from model name
+        model_name = os.path.basename(model_path).lower()
+        if "llama" in model_name:
+            self.template = "llama3"
+        else:
+            self.template = "chatml"  # qwen, mistral, etc.
+
         # LangChain conversation memory — keeps last K exchanges
         from langchain_core.messages import HumanMessage, AIMessage
         self._HumanMessage = HumanMessage
@@ -120,21 +127,38 @@ class ComputePath:
 
     def _build_prompt(self, user_message: str) -> str:
         """Build a prompt that includes conversation history from LangChain memory."""
-        prompt = (
-            "<|im_start|>system\n"
+        system_text = (
             "You are EdgeWord Assistant, a helpful AI running locally on CPU with no cloud dependencies. "
             "Be concise and clear. "
             "Pay close attention to the conversation history below — if the user refers to something said earlier, "
-            "use the history to answer accurately.<|im_end|>\n"
+            "use the history to answer accurately."
         )
 
-        # Inject past conversation turns from memory
+        if self.template == "llama3":
+            return self._build_llama3_prompt(system_text, user_message)
+        else:
+            return self._build_chatml_prompt(system_text, user_message)
+
+    def _build_chatml_prompt(self, system_text: str, user_message: str) -> str:
+        """ChatML format (Qwen, Mistral, etc.)"""
+        prompt = f"<|im_start|>system\n{system_text}<|im_end|>\n"
         for human_msg, ai_msg in self.history[-self.memory_k:]:
             prompt += f"<|im_start|>user\n{human_msg.content}<|im_end|>\n"
             prompt += f"<|im_start|>assistant\n{ai_msg.content}<|im_end|>\n"
-
         prompt += f"<|im_start|>user\n{user_message}<|im_end|>\n"
         prompt += "<|im_start|>assistant\n"
+        return prompt
+
+    def _build_llama3_prompt(self, system_text: str, user_message: str) -> str:
+        """Llama 3 format."""
+        prompt = (
+            f"<|start_header_id|>system<|end_header_id|>\n\n{system_text}<|eot_id|>"
+        )
+        for human_msg, ai_msg in self.history[-self.memory_k:]:
+            prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{human_msg.content}<|eot_id|>"
+            prompt += f"<|start_header_id|>assistant<|end_header_id|>\n\n{ai_msg.content}<|eot_id|>"
+        prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{user_message}<|eot_id|>"
+        prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
         return prompt
 
     def chat(self, message: str, max_tokens: int = 256, temperature: float = 0.7) -> None:
@@ -158,7 +182,7 @@ class ComputePath:
 
         for chunk in stream:
             tok = chunk["choices"][0]["text"]
-            if "<|im_end|>" in tok:
+            if "<|im_end|>" in tok or "<|eot_id|>" in tok:
                 break
             if first_token_time is None:
                 first_token_time = time.perf_counter() - t0
