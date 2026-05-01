@@ -127,14 +127,17 @@ class ComputePath:
         elapsed = time.perf_counter() - t0
         print(f"{GREEN}ready{RESET} {DIM}({elapsed:.1f}s, {n_threads} threads, memory={memory_k} turns){RESET}")
 
-    def _build_prompt(self, user_message: str, rag_context: str = "", tool_result: str = "") -> str:
+    def _build_prompt(self, user_message: str, rag_context: str = "", tool_result: str = "", system_prompt: str = "") -> str:
         """Build prompt with conversation history, RAG context, and tool results."""
-        system_text = (
-            "You are EdgeWord Assistant, a helpful AI running locally on CPU with no cloud dependencies. "
-            "Be concise and clear. "
-            "Pay close attention to the conversation history below — if the user refers to something said earlier, "
-            "use the history to answer accurately."
-        )
+        if system_prompt:
+            system_text = system_prompt
+        else:
+            system_text = (
+                "You are EdgeWord Assistant, a helpful AI running locally on CPU with no cloud dependencies. "
+                "Be concise and clear. "
+                "Pay close attention to the conversation history below — if the user refers to something said earlier, "
+                "use the history to answer accurately."
+            )
 
         if rag_context:
             system_text += (

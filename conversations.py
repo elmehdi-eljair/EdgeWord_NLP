@@ -55,12 +55,23 @@ class ConversationStore:
                 user_id TEXT PRIMARY KEY,
                 max_tokens INTEGER DEFAULT 256,
                 temperature REAL DEFAULT 0.7,
+                context_window INTEGER DEFAULT 4096,
+                top_p REAL DEFAULT 0.9,
+                top_k INTEGER DEFAULT 40,
+                repeat_penalty REAL DEFAULT 1.1,
+                system_prompt TEXT DEFAULT '',
                 updated_at REAL NOT NULL DEFAULT (strftime('%s','now'))
             );
 
             CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id, session_id);
             CREATE INDEX IF NOT EXISTS idx_sections_user ON sections(user_id, session_id);
         """)
+        # Migrate: add new columns to existing DBs
+        for col, default in [("context_window", "4096"), ("top_p", "0.9"), ("top_k", "40"), ("repeat_penalty", "1.1"), ("system_prompt", "''")]:
+            try:
+                self.conn.execute(f"ALTER TABLE user_settings ADD COLUMN {col} DEFAULT {default}")
+            except Exception:
+                pass
         self.conn.commit()
 
     # ── Messages ──
@@ -143,16 +154,29 @@ class ConversationStore:
 
     def save_settings(self, user_id: str, settings: dict):
         self.conn.execute(
-            "INSERT OR REPLACE INTO user_settings (user_id, max_tokens, temperature, updated_at) VALUES (?, ?, ?, ?)",
-            (user_id, settings.get("max_tokens", 256), settings.get("temperature", 0.7), time.time()),
+            """INSERT OR REPLACE INTO user_settings
+               (user_id, max_tokens, temperature, context_window, top_p, top_k, repeat_penalty, system_prompt, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id,
+             settings.get("max_tokens", 256), settings.get("temperature", 0.7),
+             settings.get("context_window", 4096), settings.get("top_p", 0.9),
+             settings.get("top_k", 40), settings.get("repeat_penalty", 1.1),
+             settings.get("system_prompt", ""), time.time()),
         )
         self.conn.commit()
 
     def get_settings(self, user_id: str) -> dict:
         row = self.conn.execute("SELECT * FROM user_settings WHERE user_id = ?", (user_id,)).fetchone()
         if not row:
-            return {"max_tokens": 256, "temperature": 0.7}
-        return {"max_tokens": row["max_tokens"], "temperature": row["temperature"]}
+            return {"max_tokens": 256, "temperature": 0.7, "context_window": 4096, "top_p": 0.9, "top_k": 40, "repeat_penalty": 1.1, "system_prompt": ""}
+        return {
+            "max_tokens": row["max_tokens"], "temperature": row["temperature"],
+            "context_window": row["context_window"] if "context_window" in row.keys() else 4096,
+            "top_p": row["top_p"] if "top_p" in row.keys() else 0.9,
+            "top_k": row["top_k"] if "top_k" in row.keys() else 40,
+            "repeat_penalty": row["repeat_penalty"] if "repeat_penalty" in row.keys() else 1.1,
+            "system_prompt": row["system_prompt"] if "system_prompt" in row.keys() else "",
+        }
 
     def close(self):
         self.conn.close()

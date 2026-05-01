@@ -65,6 +65,10 @@ export async function chat(
   opts: {
     maxTokens?: number;
     temperature?: number;
+    topP?: number;
+    topK?: number;
+    repeatPenalty?: number;
+    systemPrompt?: string;
     sessionId?: string;
     useRag?: boolean;
     useTools?: boolean;
@@ -78,6 +82,10 @@ export async function chat(
       message,
       max_tokens: opts.maxTokens ?? 256,
       temperature: opts.temperature ?? 0.7,
+      top_p: opts.topP ?? 0.9,
+      top_k: opts.topK ?? 40,
+      repeat_penalty: opts.repeatPenalty ?? 1.1,
+      system_prompt: opts.systemPrompt ?? "",
       session_id: opts.sessionId ?? "web-ui",
       use_rag: opts.useRag ?? true,
       use_tools: opts.useTools ?? true,

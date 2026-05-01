@@ -5,6 +5,35 @@ import { Message, Attachment, HealthStatus, Section } from "@/lib/types";
 import AuthPage from "@/components/AuthPage";
 
 function uid(){return Math.random().toString(36).slice(2,10)}
+
+/* ── Custom Dialog System (module-level, replaces browser confirm/alert) ── */
+let _dialogState:{msg:string;type:"confirm"|"alert";resolve:(v:boolean)=>void}|null=null;
+let _dialogRender:()=>void=()=>{};
+
+function customConfirm(msg:string):Promise<boolean>{
+  return new Promise(resolve=>{_dialogState={msg,type:"confirm",resolve};_dialogRender();});
+}
+function customAlert(msg:string):Promise<void>{
+  return new Promise(resolve=>{_dialogState={msg,type:"alert",resolve:()=>resolve()};_dialogRender();});
+}
+
+function DialogProvider(){
+  const [,forceUpdate]=useState(0);
+  _dialogRender=()=>forceUpdate(n=>n+1);
+  const d=_dialogState;
+  if(!d) return null;
+  const close=(v:boolean)=>{d.resolve(v);_dialogState=null;forceUpdate(n=>n+1);};
+  return <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:24}} onClick={()=>close(false)}>
+    <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.32)"}}/>
+    <div onClick={e=>e.stopPropagation()} style={{position:"relative",width:"100%",maxWidth:400,background:"var(--md-surface)",borderRadius:24,padding:"24px 28px 20px",boxShadow:"0 24px 38px 3px rgba(60,64,67,.14),0 9px 46px 8px rgba(60,64,67,.12)",animation:"settle .25s var(--ease-emph) both"}}>
+      <p style={{fontFamily:"var(--sans)",fontSize:15,color:"var(--md-on-surface)",lineHeight:1.6,marginBottom:20}}>{d.msg}</p>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+        {d.type==="confirm"&&<button onClick={()=>close(false)} style={{padding:"10px 20px",background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface-variant)"}}>Cancel</button>}
+        <button onClick={()=>close(true)} style={{padding:"10px 20px",background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:d.type==="confirm"?"var(--md-error)":"var(--md-primary)"}}>{d.type==="confirm"?"Confirm":"OK"}</button>
+      </div>
+    </div>
+  </div>;
+}
 function fmtTime(t:number){return new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
 const SECTION_EVERY=4;
 
@@ -221,7 +250,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                     style={{...inputS,opacity:ro?.6:1,cursor:ro?"default":"text"}}/>
                 </div>
               ))}
-              <div style={{marginTop:24}}><button onClick={()=>{if(confirm("Sign out?")){{api.logout();onLogout();}}}} style={{padding:"10px 20px",background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-error)",transition:"background .2s var(--ease)"}}
+              <div style={{marginTop:24}}><button onClick={()=>{customConfirm("Sign out?").then(ok=>{if(ok){api.logout();onLogout();}})}} style={{padding:"10px 20px",background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-error)",transition:"background .2s var(--ease)"}}
                 onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>Sign out</button></div>
             </div>}
@@ -358,7 +387,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                   </div>
                   <div style={{fontFamily:"var(--google-sans)",fontSize:15,fontWeight:500,color:"var(--md-on-surface)",marginBottom:6}}>{g.name}</div>
                   <div style={{fontFamily:"var(--sans)",fontSize:13,color:"var(--md-on-surface-variant)",lineHeight:1.5,marginBottom:12}}>{g.desc}</div>
-                  <button onClick={e=>{e.stopPropagation();alert(`"${g.name}" will be available for installation in a future update.`);}}
+                  <button onClick={e=>{e.stopPropagation();customAlert(`"${g.name}" will be available for installation in a future update.`);}}
                     style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 16px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:13,transition:"all .2s var(--ease)"}}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     Install
@@ -404,28 +433,28 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
               <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:12}}>Processing</h4>
               <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:24}}>
                 {/* Re-process */}
-                <button onClick={()=>alert("Re-processing will re-index all chunks.")} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface-variant)",transition:"all .2s var(--ease)"}}
+                <button onClick={()=>customAlert("Re-processing will re-index all chunks.")} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface-variant)",transition:"all .2s var(--ease)"}}
                   onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-low)"}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
                   Re-process
                 </button>
                 {/* Pause */}
-                <button onClick={()=>alert("Processing paused.")} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-warning)",transition:"all .2s var(--ease)"}}
+                <button onClick={()=>customAlert("Processing paused.")} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-warning)",transition:"all .2s var(--ease)"}}
                   onMouseEnter={e=>e.currentTarget.style.background="var(--md-tertiary-container)"}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
                   Pause
                 </button>
                 {/* Continue */}
-                <button onClick={()=>alert("Processing resumed.")} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-success)",transition:"all .2s var(--ease)"}}
+                <button onClick={()=>customAlert("Processing resumed.")} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-success)",transition:"all .2s var(--ease)"}}
                   onMouseEnter={e=>e.currentTarget.style.background="color-mix(in srgb, var(--md-success) 8%, transparent)"}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                   Continue
                 </button>
                 {/* Stop */}
-                <button onClick={()=>alert("Processing stopped.")} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-error)",transition:"all .2s var(--ease)"}}
+                <button onClick={()=>customAlert("Processing stopped.")} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-error)",transition:"all .2s var(--ease)"}}
                   onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -435,7 +464,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
 
               {/* Danger zone */}
               <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-error)",marginBottom:12}}>Danger Zone</h4>
-              <button onClick={async()=>{if(confirm(`Delete ${selectedDoc}? This cannot be undone.`)){await api.deleteKnowledge(selectedDoc);api.listKnowledge().then(r=>setDocs(r.documents||[]));setSelectedDoc(null);setTab("knowledge-full");}}}
+              <button onClick={async()=>{customConfirm(`Delete ${selectedDoc}? This cannot be undone.`).then(async ok=>{if(ok){await api.deleteKnowledge(selectedDoc);api.listKnowledge().then(r=>setDocs(r.documents||[]));setSelectedDoc(null);setTab("knowledge-full");}})}}
                 style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-error)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-error)",transition:"all .2s var(--ease)"}}
                 onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -481,10 +510,10 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                   {[
                     {l:"Temperature",v:temp,set:(n:number)=>{setTemp(n);localStorage.setItem("edgeword_temperature",String(n));api.saveSettings({max_tokens:maxT,temperature:n});},min:0,max:2,step:0.05,desc:"Randomness"},
                     {l:"Max Tokens",v:maxT,set:(n:number)=>{setMaxT(n);localStorage.setItem("edgeword_max_tokens",String(n));api.saveSettings({max_tokens:n,temperature:temp});},min:64,max:2048,step:64,desc:"Output length"},
-                    {l:"Context Window",v:ctxWin,set:setCtxWin,min:512,max:8192,step:512,desc:"Memory size"},
-                    {l:"Top-P",v:topP,set:setTopP,min:0,max:1,step:0.05,desc:"Nucleus sampling"},
-                    {l:"Top-K",v:topK,set:setTopK,min:1,max:100,step:1,desc:"Token candidates"},
-                    {l:"Repeat Penalty",v:repPen,set:setRepPen,min:1.0,max:2.0,step:0.05,desc:"Repetition control"},
+                    {l:"Context Window",v:ctxWin,set:(n:number)=>{setCtxWin(n);localStorage.setItem("edgeword_context_window",String(n));},min:512,max:8192,step:512,desc:"Memory size"},
+                    {l:"Top-P",v:topP,set:(n:number)=>{setTopP(n);localStorage.setItem("edgeword_top_p",String(n));},min:0,max:1,step:0.05,desc:"Nucleus sampling"},
+                    {l:"Top-K",v:topK,set:(n:number)=>{setTopK(n);localStorage.setItem("edgeword_top_k",String(n));},min:1,max:100,step:1,desc:"Token candidates"},
+                    {l:"Repeat Penalty",v:repPen,set:(n:number)=>{setRepPen(n);localStorage.setItem("edgeword_repeat_penalty",String(n));},min:1.0,max:2.0,step:0.05,desc:"Repetition control"},
                   ].map(p=>(
                     <div key={p.l} style={{padding:12,background:"var(--md-surface-container-low)",borderRadius:12}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
@@ -581,7 +610,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                           {m.tps}
                         </span>
                       </div>
-                      {m.status==="available"&&<button onClick={()=>alert(`Downloading ${m.name}... This would download the GGUF model in a real implementation.`)}
+                      {m.status==="available"&&<button onClick={()=>customAlert(`Downloading ${m.name}... This feature will be available in a future update.`)}
                         style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 14px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12}}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         Download
@@ -612,7 +641,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                     <span>{k.created_at?new Date(k.created_at*1000).toLocaleDateString([],{day:"numeric",month:"short",year:"numeric"})+" "+new Date(k.created_at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"—"}</span>
                   </div>
                   {k.is_active&&<div style={{display:"flex",gap:6}}>
-                    <button onClick={async()=>{if(!confirm(`Revoke key "${k.name}"? This cannot be undone.`))return;await api.revokeApiKey(k.key_prefix);api.listApiKeys().then(r=>setKeys(r.keys||[]));}} style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-error)",background:"transparent",border:0,cursor:"pointer",padding:"6px 12px",borderRadius:999,transition:"background .2s var(--ease)"}}
+                    <button onClick={async()=>{customConfirm(`Revoke key "${k.name}"? This cannot be undone.`).then(async ok=>{if(!ok)return;await api.revokeApiKey(k.key_prefix);api.listApiKeys().then(r=>setKeys(r.keys||[]));});}} style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-error)",background:"transparent",border:0,cursor:"pointer",padding:"6px 12px",borderRadius:999,transition:"background .2s var(--ease)"}}
                       onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>Revoke</button>
                   </div>}
@@ -777,7 +806,7 @@ export default function Home(){
 
       {/* Side actions — desktop only */}
       <nav style={{position:"fixed",left:24,bottom:24,zIndex:45,display:"flex",flexDirection:"column",gap:0,alignItems:"flex-start"}} className="hide-mobile">
-        {[{l:"Settings",onClick:()=>openSettings("profile")},{l:"Knowledge",onClick:()=>openSettings("knowledge-full")},{l:"API Keys",onClick:()=>openSettings("keys")},{l:"Sign out",onClick:()=>{if(confirm("Sign out?")){api.logout();setAuthed(false);}},danger:true}].map(a=>(
+        {[{l:"Settings",onClick:()=>openSettings("profile")},{l:"Knowledge",onClick:()=>openSettings("knowledge-full")},{l:"API Keys",onClick:()=>openSettings("keys")},{l:"Sign out",onClick:()=>{customConfirm("Sign out?").then(ok=>{if(ok){api.logout();setAuthed(false);}})},danger:true}].map(a=>(
           <a key={a.l} onClick={a.onClick} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",background:"transparent",border:0,borderRadius:999,fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:a.danger?"var(--md-error)":"var(--md-on-surface-variant)",cursor:"pointer",transition:"background .2s var(--ease)"}}
             onMouseEnter={e=>e.currentTarget.style.background=a.danger?"var(--md-error-container)":"var(--md-surface-container-low)"}
             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{a.l}</a>
@@ -823,6 +852,7 @@ export default function Home(){
       <input ref={fileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,image/*" onChange={e=>{if(!e.target.files)return;setChatFiles(p=>[...p,...Array.from(e.target.files!)]);e.target.value="";}} multiple/>
       <input ref={chatFileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,.pdf,image/*" onChange={e=>{if(!e.target.files)return;setChatFiles(p=>[...p,...Array.from(e.target.files!)]);e.target.value="";}} multiple/>
       <Settings open={settingsOpen} onClose={()=>setSettingsOpen(false)} health={health} onLogout={()=>setAuthed(false)} initialTab={settingsTab}/>
+      <DialogProvider/>
     </>
   );
 }

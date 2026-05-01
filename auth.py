@@ -63,7 +63,7 @@ class UserManager:
             )
         """)
         # Migrate: add columns if missing (for existing DBs)
-        for col, default in [("email", "''"), ("theme", "'light'"), ("accent", "'lime-violet'")]:
+        for col, default in [("email", "''"), ("theme", "'light'"), ("accent", "'lime-violet'"), ("variant", "'classic'"), ("density", "'comfortable'"), ("scale", "'default'"), ("motion", "'standard'")]:
             try:
                 self.conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT {default}")
             except Exception:
@@ -125,7 +125,7 @@ class UserManager:
 
     def get_profile(self, user_id: str) -> dict:
         row = self.conn.execute(
-            "SELECT id, username, display_name, email, theme, accent, created_at FROM users WHERE id = ?",
+            "SELECT id, username, display_name, email, theme, accent, variant, density, scale, motion, created_at FROM users WHERE id = ?",
             (user_id,)
         ).fetchone()
         if not row:
@@ -133,7 +133,7 @@ class UserManager:
         return dict(row)
 
     def update_profile(self, user_id: str, updates: dict) -> dict:
-        allowed = {"display_name", "email", "theme", "accent"}
+        allowed = {"display_name", "email", "theme", "accent", "variant", "density", "scale", "motion"}
         sets = []
         vals = []
         for k, v in updates.items():

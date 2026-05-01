@@ -47,6 +47,10 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="User message")
     max_tokens: int = Field(256, ge=1, le=2048, description="Max tokens to generate")
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
+    top_p: float = Field(0.9, ge=0.0, le=1.0, description="Nucleus sampling")
+    top_k: int = Field(40, ge=1, le=100, description="Top-K sampling")
+    repeat_penalty: float = Field(1.1, ge=1.0, le=2.0, description="Repeat penalty")
+    system_prompt: str = Field("", description="Custom system prompt (empty = default)")
     session_id: str = Field("default", description="Session ID for conversation memory")
     use_rag: bool = Field(True, description="Enable RAG context retrieval")
     use_tools: bool = Field(True, description="Enable auto-tools")
@@ -623,7 +627,7 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
     compute_path.history = session
 
     # Generate (capture output instead of printing)
-    prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result)
+    prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result, system_prompt=req.system_prompt)
 
     first_token_time = None
     token_count = 0
@@ -636,6 +640,9 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         stream=True,
         echo=False,
         temperature=req.temperature,
+        top_p=req.top_p,
+        top_k=req.top_k,
+        repeat_penalty=req.repeat_penalty,
     )
 
     for chunk in stream:
