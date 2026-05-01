@@ -986,7 +986,7 @@ export default function Home(){
 
       {/* Side actions — desktop only */}
       <nav style={{position:"fixed",left:24,bottom:24,zIndex:45,display:"flex",flexDirection:"column",gap:0,alignItems:"flex-start"}} className="hide-mobile">
-        {[{l:"Settings",onClick:()=>openSettings("profile")},{l:"Knowledge",onClick:()=>openSettings("knowledge-full")},{l:"API Keys",onClick:()=>openSettings("keys")},{l:"Sign out",onClick:()=>{customConfirm("Sign out?").then(ok=>{if(ok){api.logout();setAuthed(false);}})},danger:true}].map(a=>(
+        {[{l:"Settings",onClick:()=>openSettings("profile")},{l:"Model",onClick:()=>openSettings("model")},{l:"Knowledge",onClick:()=>openSettings("knowledge-full")},{l:"API Keys",onClick:()=>openSettings("keys")},{l:"Sign out",onClick:()=>{customConfirm("Sign out?").then(ok=>{if(ok){api.logout();setAuthed(false);}})},danger:true}].map(a=>(
           <a key={a.l} onClick={a.onClick} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",background:"transparent",border:0,borderRadius:999,fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:a.danger?"var(--md-error)":"var(--md-on-surface-variant)",cursor:"pointer",transition:"background .2s var(--ease)"}}
             onMouseEnter={e=>e.currentTarget.style.background=a.danger?"var(--md-error-container)":"var(--md-surface-container-low)"}
             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{a.l}</a>
