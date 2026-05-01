@@ -137,6 +137,7 @@ auto_tools = None
 key_manager = None
 conv_store = None
 auto_mode_engine = None
+skill_engine = None
 stt_engine = None
 tts_engine = None
 ocr_engine = None
@@ -245,6 +246,15 @@ async def lifespan(app: FastAPI):
     from auto_mode import AutoMode
     global auto_mode_engine
     auto_mode_engine = AutoMode()
+
+    # Skills engine (shares embedder with RAG)
+    global skill_engine
+    if rag_engine and hasattr(rag_engine, 'embedder'):
+        try:
+            from skills import SkillEngine
+            skill_engine = SkillEngine(rag_engine.embedder)
+        except Exception as e:
+            print(f"  Skills: disabled ({e})")
 
     # Speech-to-Text
     try:
@@ -668,8 +678,17 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         gen_rep = auto_params.get("repeat_penalty", gen_rep)
         gen_max = auto_params.get("max_tokens", gen_max)
 
+    # Skill matching — enhance system prompt if a skill matches
+    skill_name = None
+    effective_system = req.system_prompt
+    if skill_engine:
+        matched_skill = skill_engine.match(req.message)
+        if matched_skill:
+            skill_name = matched_skill["name"]
+            effective_system = skill_engine.apply(matched_skill, req.system_prompt)
+
     # Generate (capture output instead of printing)
-    prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result, system_prompt=req.system_prompt)
+    prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result, system_prompt=effective_system)
 
     first_token_time = None
     token_count = 0
@@ -725,6 +744,7 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         cached=False,
         session_id=req.session_id,
         auto_profile=auto_profile,
+        skill_used=skill_name,
     )
 
 
