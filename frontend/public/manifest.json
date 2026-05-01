@@ -1,0 +1,10 @@
+{
+  "name": "EdgeWord",
+  "short_name": "EdgeWord",
+  "description": "CPU-native NLP pipeline",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FBFAFE",
+  "theme_color": "#FBFAFE",
+  "icons": []
+}

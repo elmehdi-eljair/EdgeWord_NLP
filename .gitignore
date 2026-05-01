@@ -10,3 +10,5 @@ models/
 .claude/
 *.egg-info/
 .env
+frontend/node_modules/
+frontend/.next/
