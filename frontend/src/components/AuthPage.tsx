@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import * as api from "@/lib/api";
 
@@ -11,13 +10,10 @@ export default function AuthPage({ onAuth }: { onAuth: () => void }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
-
   useEffect(() => { requestAnimationFrame(() => setReady(true)); }, []);
 
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+    e.preventDefault(); setError(""); setLoading(true);
     try {
       if (mode === "register") await api.register(username, password, displayName);
       else await api.login(username, password);
@@ -27,114 +23,74 @@ export default function AuthPage({ onAuth }: { onAuth: () => void }) {
   };
 
   return (
-    <div className="min-h-dvh flex flex-col relative overflow-hidden"
-      style={{ background: "linear-gradient(170deg, #FDFBFF 0%, #F8F4FF 30%, #FFF9FD 60%, #FEFCFF 100%)" }}>
+    <>
+      <div className="mesh" />
+      <div className="grain" />
+      <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>
 
-      {/* Living ambient orbs */}
-      <div className="absolute top-[-15%] right-[-5%] w-[600px] h-[600px] rounded-full anim-breathe pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(123,63,238,0.07) 0%, transparent 65%)" }} />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full anim-breathe pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(232,50,184,0.05) 0%, transparent 65%)", animationDelay: "2s" }} />
-      <div className="absolute top-[40%] left-[60%] w-[300px] h-[300px] rounded-full anim-breathe pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(149,104,243,0.04) 0%, transparent 65%)", animationDelay: "1s" }} />
+        {/* Wordmark */}
+        <div className={`transition-all duration-700 ${ready ? "opacity-100" : "opacity-0 translate-y-4"}`}
+          style={{ marginBottom: 48, userSelect: "none" }}>
+          <span style={{ fontFamily: "var(--sans)", fontWeight: 700, fontSize: 28, letterSpacing: "-.035em", lineHeight: .9, color: "var(--ink)" }}>
+            <span>Edge</span>
+            <span style={{ background: "var(--wordmark-gradient)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>Word</span>
+          </span>
+          <sup style={{ fontFamily: "var(--mono)", fontSize: 9, fontWeight: 500, color: "var(--text-2)", marginLeft: 3, display: "inline-block", transform: "translateY(2px)" }}>TM</sup>
+        </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 relative z-10">
-        <div className={`w-full max-w-[440px] transition-all duration-1000 ease-out ${ready ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
+        {/* Hero opener — pre-auth only */}
+        <h1 className={`transition-all duration-1000 ${ready ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}
+          style={{ fontFamily: "var(--sans)", fontWeight: 700, fontSize: "clamp(40px, 7vw, 88px)", lineHeight: .92, letterSpacing: "-.04em", color: "var(--ink)", textAlign: "center", maxWidth: "14ch", marginBottom: 48 }}>
+          Designed for{" "}
+          <span style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontWeight: 400, letterSpacing: "-.02em", background: "linear-gradient(135deg, var(--violet) 0, var(--cyan) 100%)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
+            people who feel
+          </span>{" "}
+          <span style={{ position: "relative", display: "inline-block", color: "var(--text-3)" }}>
+            old
+            <span style={{ position: "absolute", left: "-4%", right: "-4%", top: "52%", height: 8, background: "var(--hot)", transform: "rotate(-3deg)", borderRadius: 4 }} />
+          </span>{" "}
+          alive.
+        </h1>
 
-          {/* Brand mark — floating, glowing */}
-          <div className="flex justify-center mb-16">
-            <div className="relative">
-              <div className="w-[80px] h-[80px] rounded-[22px] relative z-10"
+        {/* Auth form */}
+        <div className={`transition-all duration-700 delay-300 ${ready ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
+          style={{ width: "100%", maxWidth: 420 }}>
+
+          {/* Tabs */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 28 }}>
+            {(["login", "register"] as const).map(m => (
+              <button key={m} onClick={() => { setMode(m); setError(""); }}
                 style={{
-                  background: "linear-gradient(135deg, #7B3FEE 0%, #A855F7 40%, #E832B8 100%)",
-                  boxShadow: "0 8px 40px rgba(123,63,238,0.3), 0 2px 8px rgba(123,63,238,0.2)",
-                }} />
-              {/* Glow behind */}
-              <div className="absolute inset-0 rounded-[22px] anim-glow"
-                style={{ background: "linear-gradient(135deg, #7B3FEE, #E832B8)", filter: "blur(20px)", opacity: 0.3 }} />
-            </div>
+                  flex: 1, padding: "10px 0", background: mode === m ? "var(--surface-2)" : "var(--surface)", border: `1px solid ${mode === m ? "var(--line-2)" : "var(--line)"}`,
+                  borderRadius: 10, cursor: "pointer", fontFamily: "var(--sans)", fontWeight: 500, fontSize: 13, letterSpacing: "-.01em",
+                  color: mode === m ? "var(--ink)" : "var(--text-2)", transition: "all .25s var(--ease)",
+                }}>
+                {m === "login" ? "Sign in" : "Create account"}
+              </button>
+            ))}
           </div>
 
-          {/* Headline */}
-          <h1 className="text-center font-bold text-ink leading-[1.08] mb-5"
-            style={{ fontSize: "clamp(34px, 8vw, 52px)", letterSpacing: "-0.045em" }}>
-            Think privately.
-          </h1>
+          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {mode === "register" && (
+              <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)}
+                placeholder="Your name"
+                style={{ width: "100%", padding: "12px 16px", background: "var(--card-bg)", border: "1px solid var(--line-2)", borderRadius: 12, fontFamily: "var(--sans)", fontSize: 15, color: "var(--ink)", outline: "none", backdropFilter: "blur(20px)", transition: "all .25s var(--ease)" }} />
+            )}
+            <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required minLength={3} autoComplete="username"
+              style={{ width: "100%", padding: "12px 16px", background: "var(--card-bg)", border: "1px solid var(--line-2)", borderRadius: 12, fontFamily: "var(--sans)", fontSize: 15, color: "var(--ink)", outline: "none", backdropFilter: "blur(20px)", transition: "all .25s var(--ease)" }} />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required minLength={6}
+              autoComplete={mode === "register" ? "new-password" : "current-password"}
+              style={{ width: "100%", padding: "12px 16px", background: "var(--card-bg)", border: "1px solid var(--line-2)", borderRadius: 12, fontFamily: "var(--sans)", fontSize: 15, color: "var(--ink)", outline: "none", backdropFilter: "blur(20px)", transition: "all .25s var(--ease)" }} />
 
-          <p className="text-center leading-[1.7] mx-auto max-w-[340px] mb-16"
-            style={{ fontSize: "clamp(15px, 3vw, 18px)", color: "#6E6989" }}>
-            AI that lives on your machine. Your words stay yours.
-          </p>
+            {error && <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--hot)", textAlign: "center" }}>{error}</p>}
 
-          {/* Form — no box, no card, just fields floating on the warm background */}
-          <div className={`transition-all duration-700 delay-300 ${ready ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
-
-            {/* Mode switch — soft pills */}
-            <div className="flex justify-center mb-10">
-              <div className="inline-flex p-1.5 rounded-full shadow-soft"
-                style={{ background: "rgba(255,255,255,0.8)", backdropFilter: "blur(12px)" }}>
-                <button onClick={() => { setMode("login"); setError(""); }}
-                  className={`px-7 py-2.5 rounded-full text-[14px] font-semibold transition-all duration-300 ${
-                    mode === "login"
-                      ? "bg-white text-ink shadow-medium"
-                      : "text-ink-3 hover:text-ink"
-                  }`}>
-                  Sign in
-                </button>
-                <button onClick={() => { setMode("register"); setError(""); }}
-                  className={`px-7 py-2.5 rounded-full text-[14px] font-semibold transition-all duration-300 ${
-                    mode === "register"
-                      ? "bg-white text-ink shadow-medium"
-                      : "text-ink-3 hover:text-ink"
-                  }`}>
-                  Create account
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={submit} className="space-y-4">
-              {mode === "register" && (
-                <div className="anim-fade-up">
-                  <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Your name"
-                    className="w-full px-5 py-4 text-[16px] bg-white/80 backdrop-blur-sm border border-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:bg-white placeholder:text-ink-4 transition-all shadow-soft hover:shadow-medium" />
-                </div>
-              )}
-
-              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)}
-                placeholder="Username" required minLength={3} autoComplete="username"
-                className="w-full px-5 py-4 text-[16px] bg-white/80 backdrop-blur-sm border border-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:bg-white placeholder:text-ink-4 transition-all shadow-soft hover:shadow-medium" />
-
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password" required minLength={6}
-                autoComplete={mode === "register" ? "new-password" : "current-password"}
-                className="w-full px-5 py-4 text-[16px] bg-white/80 backdrop-blur-sm border border-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:bg-white placeholder:text-ink-4 transition-all shadow-soft hover:shadow-medium" />
-
-              {error && (
-                <p className="text-[14px] text-red text-center anim-fade-up font-medium py-2">{error}</p>
-              )}
-
-              <div className="pt-3">
-                <button type="submit" disabled={loading}
-                  className="w-full py-4.5 text-[16px] font-semibold text-white rounded-2xl active:scale-[0.97] transition-all duration-200 disabled:opacity-40"
-                  style={{
-                    background: "linear-gradient(135deg, #7B3FEE 0%, #9568F3 50%, #A855F7 100%)",
-                    boxShadow: "0 4px 20px rgba(123,63,238,0.35), 0 1px 3px rgba(123,63,238,0.2)",
-                    padding: "18px",
-                  }}>
-                  {loading ? "..." : mode === "login" ? "Continue" : "Get started"}
-                </button>
-              </div>
-            </form>
-          </div>
+            <button type="submit" disabled={loading}
+              style={{ width: "100%", padding: "12px 0", background: "var(--send-bg)", color: "var(--send-color)", border: "none", borderRadius: 10, cursor: loading ? "not-allowed" : "pointer", fontFamily: "var(--sans)", fontWeight: 600, fontSize: 13, letterSpacing: "-.01em", transition: "all .25s var(--spring)", boxShadow: "var(--send-shadow)", opacity: loading ? 0.5 : 1 }}>
+              {loading ? "..." : mode === "login" ? "SIGN IN" : "GET STARTED"}
+            </button>
+          </form>
         </div>
       </div>
-
-      {/* Footer — barely there */}
-      <div className={`text-center pb-8 text-[12px] text-ink-4 tracking-wide transition-all duration-1000 delay-700 ${ready ? "opacity-100" : "opacity-0"}`}>
-        Runs entirely on your hardware
-      </div>
-    </div>
+    </>
   );
 }
