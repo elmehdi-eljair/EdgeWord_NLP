@@ -214,6 +214,58 @@ export async function saveSettings(settings: Record<string, any>) {
   }).catch(() => {});
 }
 
+export async function chatStream(
+  message: string,
+  onEvent: (event: any) => void,
+  opts: {
+    maxTokens?: number; temperature?: number; topP?: number; topK?: number;
+    repeatPenalty?: number; systemPrompt?: string; autoMode?: boolean;
+    useRag?: boolean; useTools?: boolean;
+  } = {}
+): Promise<void> {
+  // Call backend directly for SSE (Next.js proxy/routes buffer streams)
+  const sseBase = typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:8000" : `${typeof window !== "undefined" ? window.location.origin : ""}/api`;
+  const res = await fetch(`${sseBase}/v1/chat/stream`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      message,
+      max_tokens: opts.maxTokens ?? 256,
+      temperature: opts.temperature ?? 0.7,
+      top_p: opts.topP ?? 0.9,
+      top_k: opts.topK ?? 40,
+      repeat_penalty: opts.repeatPenalty ?? 1.1,
+      system_prompt: opts.systemPrompt ?? "",
+      auto_mode: opts.autoMode ?? false,
+      session_id: "web-ui",
+      use_rag: opts.useRag ?? true,
+      use_tools: opts.useTools ?? true,
+      use_cache: false, // no cache for streaming
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `API error ${res.status}`);
+  }
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try { onEvent(JSON.parse(line.slice(6))); } catch {}
+      }
+    }
+  }
+}
+
 export async function chatReason(
   message: string,
   onEvent: (event: any) => void,

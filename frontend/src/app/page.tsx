@@ -922,8 +922,29 @@ export default function Home(){
         const am:Message={id:amId,role:"assistant",text:finalResponse||reasoning.synthesise||"",reasoning,timestamp:Date.now()};
         api.saveMessage(am);
       }else{
-        // Normal mode
-        const r=await api.chat(fullMsg,{
+        // Normal mode — streaming
+        const amId=uid();
+        let streamText="";
+        let meta:any={};
+        setMessages(p=>[...p,{id:amId,role:"assistant",text:"",timestamp:Date.now()}]);
+        await api.chatStream(fullMsg,(event)=>{
+          if(event.type==="meta"){
+            meta=event;
+          }else if(event.type==="token"){
+            streamText+=event.text;
+            setMessages(p=>p.map(m=>m.id===amId?{...m,text:streamText}:m));
+          }else if(event.type==="done"){
+            setMessages(p=>p.map(m=>m.id===amId?{...m,
+              text:streamText,
+              sentiment:meta.sentiment,
+              ragSources:meta.rag_sources?.length?meta.rag_sources:undefined,
+              toolResult:meta.tool_result||undefined,
+              autoProfile:meta.auto_profile||undefined,
+              skillUsed:meta.skill_used||undefined,
+              tokens:event.tokens,tps:event.tps,ttft:event.ttft_s,totalS:event.total_s,
+            }:m));
+          }
+        },{
           maxTokens:Number(localStorage.getItem("edgeword_max_tokens")||"256"),
           temperature:Number(localStorage.getItem("edgeword_temperature")||"0.7"),
           topP:Number(localStorage.getItem("edgeword_top_p")||"0.9"),
@@ -932,8 +953,8 @@ export default function Home(){
           systemPrompt:localStorage.getItem("edgeword_system_prompt")||"",
           autoMode:autoModeOn,
         });
-        const am:Message={id:uid(),role:"assistant",text:r.response,sentiment:r.sentiment,ragSources:r.rag_sources.length?r.rag_sources:undefined,toolResult:r.tool_result||undefined,tokens:r.tokens,tps:r.tps,ttft:r.ttft_s,totalS:r.total_s,cached:r.cached,autoProfile:r.auto_profile||undefined,skillUsed:r.skill_used||undefined,timestamp:Date.now()};
-        setMessages(p=>[...p,am]);api.saveMessage(am);
+        const am:Message={id:amId,role:"assistant",text:streamText,sentiment:meta.sentiment,ragSources:meta.rag_sources?.length?meta.rag_sources:undefined,toolResult:meta.tool_result||undefined,autoProfile:meta.auto_profile||undefined,skillUsed:meta.skill_used||undefined,tokens:meta.tokens,timestamp:Date.now()};
+        api.saveMessage(am);
       }
     }catch(err:any){setMessages(p=>[...p,{id:uid(),role:"assistant",text:`Error: ${err.message}`,timestamp:Date.now()}]);}
     finally{setGenerating(false);}

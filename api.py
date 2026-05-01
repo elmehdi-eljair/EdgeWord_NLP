@@ -605,6 +605,97 @@ async def classify_batch(req: ClassifyBatchRequest, auth: dict = Depends(verify_
     return ClassifyBatchResponse(results=results, total_ms=round(total_ms, 2))
 
 
+@app.post("/v1/chat/stream")
+async def chat_stream(req: ChatRequest, auth: dict = Depends(verify_auth)):
+    """Streaming chat — SSE endpoint that streams tokens as they generate."""
+    if compute_path is None:
+        raise HTTPException(status_code=503, detail="Compute-Path not available")
+
+    from fastapi.responses import StreamingResponse
+    import json as _json
+
+    # Classify sentiment
+    t0 = time.perf_counter()
+    label, confidence, probs = fast_path._infer(req.message)
+    cls_ms = (time.perf_counter() - t0) * 1000
+    scores = {fast_path.id2label.get(i, str(i)): float(p) for i, p in enumerate(probs)}
+    sentiment = {"label": label, "confidence": confidence, "scores": scores, "latency_ms": round(cls_ms, 2)}
+
+    # Tools
+    tool_result = ""
+    if req.use_tools and auto_tools:
+        result = auto_tools.run(req.message)
+        if result:
+            tool_result = result
+
+    # RAG
+    rag_context = ""
+    rag_sources = []
+    if req.use_rag and rag_engine:
+        results = rag_engine.retrieve(req.message, top_k=3)
+        if results and results[0]["score"] > 0.3:
+            rag_context = rag_engine.format_context(results)
+            rag_sources = list(set(r["source"] for r in results))
+
+    # Auto-mode
+    auto_profile = None
+    gen_temp = req.temperature
+    gen_top_p = req.top_p
+    gen_top_k = req.top_k
+    gen_rep = req.repeat_penalty
+    gen_max = req.max_tokens
+    if req.auto_mode and auto_mode_engine and compute_path:
+        auto_params = auto_mode_engine.classify(req.message, compute_path.llm)
+        auto_profile = auto_params.get("profile")
+        gen_temp = auto_params.get("temperature", gen_temp)
+        gen_top_p = auto_params.get("top_p", gen_top_p)
+        gen_top_k = auto_params.get("top_k", gen_top_k)
+        gen_rep = auto_params.get("repeat_penalty", gen_rep)
+        gen_max = auto_params.get("max_tokens", gen_max)
+
+    # Skills
+    skill_name = None
+    effective_system = req.system_prompt
+    if skill_engine:
+        matched_skill = skill_engine.match(req.message)
+        if matched_skill:
+            skill_name = matched_skill["name"]
+            effective_system = skill_engine.apply(matched_skill, req.system_prompt)
+
+    prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result, system_prompt=effective_system)
+
+    def generate():
+        # Send metadata first
+        yield f"data: {_json.dumps({'type':'meta','sentiment':sentiment,'tool_result':tool_result or None,'rag_sources':rag_sources,'auto_profile':auto_profile,'skill_used':skill_name})}\n\n"
+
+        token_count = 0
+        t_start = time.perf_counter()
+        first_token_time = None
+
+        stream = compute_path.llm.create_completion(
+            prompt, max_tokens=gen_max, stream=True, echo=False,
+            temperature=gen_temp, top_p=gen_top_p, top_k=gen_top_k, repeat_penalty=gen_rep,
+        )
+        for chunk in stream:
+            tok = chunk["choices"][0]["text"]
+            if "<|im_end|>" in tok or "<|eot_id|>" in tok:
+                break
+            if first_token_time is None:
+                first_token_time = time.perf_counter() - t_start
+            token_count += 1
+            yield f"data: {_json.dumps({'type':'token','text':tok})}\n\n"
+
+        total = time.perf_counter() - t_start
+        tps = token_count / total if total > 0 else 0
+        ttft = first_token_time if first_token_time is not None else total
+
+        yield f"data: {_json.dumps({'type':'done','tokens':token_count,'tps':round(tps,1),'ttft_s':round(ttft,3),'total_s':round(total,3)})}\n\n"
+
+    key_manager.log_usage(auth.get("key", "jwt"), "/v1/chat/stream", tokens=0, latency_ms=0)
+    return StreamingResponse(generate(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
+
+
 @app.post("/v1/chat/reason")
 async def chat_reason(req: ChatRequest, auth: dict = Depends(verify_auth)):
     """Reasoning mode — multi-stage chain-of-thought with SSE streaming."""
