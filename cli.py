@@ -1,6 +1,7 @@
 """
 EdgeWord NLP — Interactive CLI
-Interact with the Fast-Path (classification) and Compute-Path (generation) backends.
+Type anything — the pipeline automatically classifies short statements
+and generates responses for questions/prompts.
 
 Usage:
     .venv/bin/python3 cli.py
@@ -34,10 +35,35 @@ RED = "\033[31m"
 MAGENTA = "\033[35m"
 RESET = "\033[0m"
 
+# --- Routing heuristics ---
+QUESTION_STARTERS = (
+    "who", "what", "when", "where", "why", "how", "which", "can", "could",
+    "would", "should", "is", "are", "was", "were", "do", "does", "did",
+    "will", "shall", "tell", "explain", "describe", "define", "list",
+    "summarize", "summarise", "compare", "write", "create", "generate",
+    "give", "show", "translate", "help", "suggest", "recommend",
+)
+
 
 def _softmax(x: np.ndarray) -> np.ndarray:
     e = np.exp(x - x.max(axis=-1, keepdims=True))
     return e / e.sum(axis=-1, keepdims=True)
+
+
+def is_question_or_prompt(text: str) -> bool:
+    """Decide if input is a question/instruction (-> generate) or a statement (-> classify)."""
+    stripped = text.strip().rstrip(".")
+    if stripped.endswith("?"):
+        return True
+    if stripped.endswith(":"):
+        return True
+    first_word = stripped.split()[0].lower().rstrip(",") if stripped else ""
+    if first_word in QUESTION_STARTERS:
+        return True
+    # Long inputs with multiple sentences are more likely prompts
+    if len(stripped) > 200:
+        return True
+    return False
 
 
 class FastPath:
@@ -61,7 +87,6 @@ class FastPath:
             cfg = json.load(f)
         self.id2label = {int(k): v for k, v in cfg.get("id2label", {}).items()}
 
-        # warmup
         self._infer("warmup sentence")
         elapsed = time.perf_counter() - t0
         print(f"{GREEN}ready{RESET} {DIM}({elapsed:.1f}s){RESET}")
@@ -82,8 +107,7 @@ class FastPath:
         ms = (time.perf_counter() - t0) * 1000
 
         colour = GREEN if label == "POSITIVE" else RED
-        print(f"\n  {colour}{BOLD}{label}{RESET}  {confidence:.1%} confidence  {DIM}({ms:.1f} ms){RESET}")
-        # show full distribution
+        print(f"\n  {DIM}[classify]{RESET} {colour}{BOLD}{label}{RESET}  {confidence:.1%}  {DIM}({ms:.1f} ms){RESET}")
         for i, p in enumerate(probs):
             lbl = self.id2label.get(i, str(i))
             bar = "█" * int(p * 30)
@@ -106,12 +130,20 @@ class ComputePath:
             n_gpu_layers=0,
             verbose=False,
         )
+        self.model_path = model_path
         self.n_threads = n_threads
         elapsed = time.perf_counter() - t0
         print(f"{GREEN}ready{RESET} {DIM}({elapsed:.1f}s, {n_threads} threads){RESET}")
 
-    def generate(self, prompt: str, max_tokens: int = 256, temperature: float = 0.7) -> None:
-        sys.stdout.write(f"\n  {CYAN}")
+    def chat(self, message: str, max_tokens: int = 256, temperature: float = 0.7) -> None:
+        prompt = (
+            "<|im_start|>system\n"
+            "You are a helpful assistant. Be concise and clear.<|im_end|>\n"
+            f"<|im_start|>user\n{message}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
+
+        sys.stdout.write(f"\n  {DIM}[chat]{RESET} {CYAN}")
         sys.stdout.flush()
 
         first_token_time = None
@@ -127,10 +159,13 @@ class ComputePath:
         )
 
         for chunk in stream:
+            tok = chunk["choices"][0]["text"]
+            if "<|im_end|>" in tok:
+                break
             if first_token_time is None:
                 first_token_time = time.perf_counter() - t0
             token_count += 1
-            sys.stdout.write(chunk["choices"][0]["text"])
+            sys.stdout.write(tok)
             sys.stdout.flush()
 
         total = time.perf_counter() - t0
@@ -140,15 +175,6 @@ class ComputePath:
         sys.stdout.write(RESET)
         print(f"\n\n  {DIM}{token_count} tokens · {tps:.1f} t/s · TTFT {ttft:.3f}s{RESET}\n")
 
-    def chat(self, message: str, max_tokens: int = 256, temperature: float = 0.7) -> None:
-        prompt = (
-            "<|im_start|>system\n"
-            "You are a helpful assistant. Be concise and clear.<|im_end|>\n"
-            f"<|im_start|>user\n{message}<|im_end|>\n"
-            "<|im_start|>assistant\n"
-        )
-        self.generate(prompt, max_tokens=max_tokens, temperature=temperature)
-
 
 def print_banner(has_compute: bool) -> None:
     print(f"""
@@ -156,23 +182,20 @@ def print_banner(has_compute: bool) -> None:
 ║          EdgeWord NLP — Interactive CLI           ║
 ╚══════════════════════════════════════════════════╝{RESET}
 """)
-    print(f"  {BOLD}Modes:{RESET}")
-    print(f"    {YELLOW}classify{RESET} / {YELLOW}c{RESET}   — Sentiment analysis (Fast-Path)")
+    print(f"  Just type anything. The pipeline auto-detects what to do:")
+    print(f"    {GREEN}Statements{RESET}  → sentiment classification  {DIM}(Fast-Path, ONNX){RESET}")
     if has_compute:
-        print(f"    {YELLOW}generate{RESET} / {YELLOW}g{RESET}   — Raw text completion (Compute-Path)")
-        print(f"    {YELLOW}chat{RESET}             — Chat with the model (Compute-Path)")
-    print(f"    {YELLOW}bench{RESET}            — Quick latency benchmark")
-    print(f"    {YELLOW}help{RESET}             — Show this help")
-    print(f"    {YELLOW}quit{RESET} / {YELLOW}q{RESET}        — Exit")
+        print(f"    {CYAN}Questions{RESET}   → AI-generated answer      {DIM}(Compute-Path, llama.cpp){RESET}")
+    print()
+    print(f"  {BOLD}Commands:{RESET}")
+    print(f"    {YELLOW}bench{RESET}    — run latency benchmark")
+    print(f"    {YELLOW}quit{RESET}     — exit")
     if has_compute:
-        print(f"\n  {BOLD}Generation settings:{RESET}  {DIM}(change inline){RESET}")
-        print(f"    {YELLOW}/tokens N{RESET}        — Set max tokens (default 256)")
-        print(f"    {YELLOW}/temp N{RESET}          — Set temperature (default 0.7)")
-        print(f"    {YELLOW}/threads N{RESET}       — Set thread count (reloads model)")
+        print(f"    {YELLOW}/tokens N{RESET}  /temp N  /threads N  — tune generation")
     print()
 
 
-def run_bench(fast: FastPath) -> None:
+def run_bench(fast: FastPath, compute: "ComputePath | None") -> None:
     sentences = [
         "This product is absolutely wonderful and I love it.",
         "Terrible quality, completely useless, waste of money.",
@@ -180,7 +203,7 @@ def run_bench(fast: FastPath) -> None:
         "Incredible breakthrough in renewable energy technology!",
         "I regret buying this, it broke after one day.",
     ]
-    print(f"\n  {BOLD}Fast-Path Benchmark{RESET} ({len(sentences)} sentences × 20 reps)\n")
+    print(f"\n  {BOLD}Fast-Path Benchmark{RESET} ({len(sentences)} sentences x 20 reps)\n")
     times = []
     for _ in range(20):
         for s in sentences:
@@ -200,7 +223,29 @@ def run_bench(fast: FastPath) -> None:
     print(f"    p95:  {p95:.1f} ms")
     print(f"    p99:  {p99:.1f} ms")
     print(f"    QPS:  {qps:.1f} req/s")
-    print(f"    runs: {n}\n")
+    print(f"    runs: {n}")
+
+    if compute:
+        print(f"\n  {BOLD}Compute-Path Benchmark{RESET} (1 prompt, 60 tokens)\n")
+        t0 = time.perf_counter()
+        first_t = None
+        count = 0
+        stream = compute.llm.create_completion(
+            "Explain CPU inference in three sentences:",
+            max_tokens=60, stream=True, echo=False, temperature=0.0,
+        )
+        for chunk in stream:
+            if first_t is None:
+                first_t = time.perf_counter() - t0
+            count += 1
+        total = time.perf_counter() - t0
+        tps = count / total if total > 0 else 0
+        ttft_sla = f"{GREEN}PASS{RESET}" if first_t < 1.0 else f"{RED}FAIL{RESET}"
+        tps_sla = f"{GREEN}PASS{RESET}" if tps >= 10 else f"{RED}FAIL{RESET}"
+        print(f"    TTFT:  {first_t:.3f}s   SLA(<1s): {ttft_sla}")
+        print(f"    TPS:   {tps:.1f} t/s  SLA(10+): {tps_sla}")
+        print(f"    tokens: {count}")
+    print()
 
 
 def main() -> None:
@@ -216,15 +261,12 @@ def main() -> None:
     compute = None
     if not args.fast_only and args.model:
         from pathlib import Path
-
         if not Path(args.model).exists():
             print(f"{RED}Model not found: {args.model}{RESET}")
             sys.exit(1)
         compute = ComputePath(args.model, n_threads=args.threads)
     elif not args.fast_only:
-        # auto-detect model in ./models/
         from pathlib import Path
-
         models_dir = Path(__file__).parent / "models"
         ggufs = sorted(models_dir.glob("*.gguf")) if models_dir.exists() else []
         if ggufs:
@@ -234,18 +276,14 @@ def main() -> None:
             print(f"{DIM}Use --model path/to/model.gguf or place a .gguf in ./models/{RESET}\n")
 
     has_compute = compute is not None
-    print_banner(has_compute)
-
-    # Session state
     max_tokens = 256
     temperature = 0.7
-    mode = "classify"
+
+    print_banner(has_compute)
 
     while True:
         try:
-            mode_tag = {"classify": f"{GREEN}classify", "generate": f"{MAGENTA}generate", "chat": f"{CYAN}chat"}
-            tag = mode_tag.get(mode, f"{YELLOW}{mode}")
-            raw = input(f"{BOLD}[{tag}{RESET}{BOLD}]{RESET} ").strip()
+            raw = input(f"{BOLD}>{RESET} ").strip()
         except (KeyboardInterrupt, EOFError):
             print(f"\n{DIM}Goodbye.{RESET}")
             break
@@ -262,29 +300,9 @@ def main() -> None:
         if low in ("help", "h", "?"):
             print_banner(has_compute)
             continue
-        if low in ("classify", "c"):
-            mode = "classify"
-            print(f"  {DIM}Switched to classify mode{RESET}")
-            continue
-        if low in ("generate", "g"):
-            if not has_compute:
-                print(f"  {RED}Generation not available — no model loaded{RESET}")
-                continue
-            mode = "generate"
-            print(f"  {DIM}Switched to generate mode{RESET}")
-            continue
-        if low == "chat":
-            if not has_compute:
-                print(f"  {RED}Chat not available — no model loaded{RESET}")
-                continue
-            mode = "chat"
-            print(f"  {DIM}Switched to chat mode{RESET}")
-            continue
         if low == "bench":
-            run_bench(fast)
+            run_bench(fast, compute)
             continue
-
-        # --- Settings ---
         if low.startswith("/tokens "):
             try:
                 max_tokens = int(raw.split()[1])
@@ -306,20 +324,19 @@ def main() -> None:
             try:
                 n = int(raw.split()[1])
                 print(f"  {DIM}Reloading model with {n} threads...{RESET}")
-                model_path = compute.llm.model_path
+                mp = compute.model_path
                 del compute
-                compute = ComputePath(model_path, n_threads=n)
+                compute = ComputePath(mp, n_threads=n)
+                has_compute = True
             except (ValueError, IndexError):
                 print(f"  {RED}Usage: /threads N{RESET}")
             continue
 
-        # --- Inference ---
-        if mode == "classify":
-            fast.classify(raw)
-        elif mode == "generate":
-            compute.generate(raw, max_tokens=max_tokens, temperature=temperature)
-        elif mode == "chat":
+        # --- Auto-route ---
+        if has_compute and is_question_or_prompt(raw):
             compute.chat(raw, max_tokens=max_tokens, temperature=temperature)
+        else:
+            fast.classify(raw)
 
 
 if __name__ == "__main__":
