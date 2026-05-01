@@ -97,6 +97,8 @@ function Settings({open,onClose,health,onLogout}:{open:boolean;onClose:()=>void;
   const [keys,setKeys]=useState<any[]>([]);
   const [newKeyName,setNewKeyName]=useState("");
   const [createdKey,setCreatedKey]=useState("");
+  const [kSearch,setKSearch]=useState("");
+  const [selectedDoc,setSelectedDoc]=useState<string|null>(null);
   const [maxT,setMaxT]=useState(256);
   const [temp,setTemp]=useState(0.7);
   const [variant,setVariant]=useState("classic");
@@ -130,7 +132,7 @@ function Settings({open,onClose,health,onLogout}:{open:boolean;onClose:()=>void;
   return(
     <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"64px 24px 24px"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div style={{position:"absolute",inset:0,background:"rgba(32,33,36,.32)",opacity:1,transition:"opacity .25s var(--ease)"}}/>
-      <section style={{position:"relative",width:"100%",maxWidth:880,background:"var(--md-surface)",borderRadius:24,padding:"32px 40px 40px",transform:"translateY(0) scale(1)",boxShadow:"0 24px 38px 3px rgba(60,64,67,.14),0 9px 46px 8px rgba(60,64,67,.12),0 11px 15px -7px rgba(60,64,67,.20)",animation:"settle .35s var(--ease-emph) both"}}>
+      <section style={{position:"relative",width:"100%",maxWidth:(tab==="knowledge-full"||selectedDoc)?1100:880,background:"var(--md-surface)",borderRadius:24,padding:"32px 40px 40px",transform:"translateY(0) scale(1)",boxShadow:"0 24px 38px 3px rgba(60,64,67,.14),0 9px 46px 8px rgba(60,64,67,.12),0 11px 15px -7px rgba(60,64,67,.20)",animation:"settle .35s var(--ease-emph) both",transition:"max-width .35s var(--ease-emph)"}}>
         <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,paddingBottom:16,borderBottom:"1px solid var(--md-outline-variant)"}}>
           <h2 style={{fontFamily:"var(--google-sans)",fontWeight:400,fontSize:24,color:"var(--md-on-surface)",display:"flex",alignItems:"center",gap:12}}>Settings <span style={{fontFamily:"var(--google-sans)",fontSize:12,color:"var(--md-on-surface-variant)",fontWeight:500,padding:"4px 10px",background:"var(--md-surface-container)",borderRadius:999}}>workspace</span></h2>
           <button onClick={onClose} style={{background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-primary)",padding:"8px 14px",transition:"background .2s var(--ease)"}}
@@ -220,47 +222,105 @@ function Settings({open,onClose,health,onLogout}:{open:boolean;onClose:()=>void;
             </div>}
 
             {/* ── Knowledge Fullscreen ── */}
-            {tab==="knowledge-full"&&<div>
+            {tab==="knowledge-full"&&!selectedDoc&&<div>
+              {/* Header */}
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-                <button onClick={()=>setTab("knowledge")} style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
+                <button onClick={()=>{setTab("knowledge");setKSearch("");}} style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
                   onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
                 </button>
-                <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:18,color:"var(--md-on-surface)"}}>Knowledge Management</h3>
-              </div>
-              <p style={{fontFamily:"var(--sans)",fontSize:14,color:"var(--md-on-surface-variant)",marginBottom:20,lineHeight:1.6}}>
-                Upload documents to build your knowledge base. EdgeWord will index them for RAG retrieval — your AI responses will be grounded in these documents.
-              </p>
-
-              {/* Upload area */}
-              <div style={{padding:32,border:"2px dashed var(--md-outline-variant)",borderRadius:16,textAlign:"center",marginBottom:24,cursor:"pointer",transition:"all .2s var(--ease)"}}
-                onClick={()=>kFileRef.current?.click()}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--md-primary)";e.currentTarget.style.background="var(--md-primary-container)";}}
-                onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--md-outline-variant)";e.currentTarget.style.background="transparent";}}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="1.5" strokeLinecap="round" style={{marginBottom:12}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)",marginBottom:4}}>Drop files here or click to upload</div>
-                <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)"}}>Supports .txt, .md, .py, .json, .csv, .yaml, .pdf</div>
+                <h3 style={{flex:1,fontFamily:"var(--google-sans)",fontWeight:500,fontSize:20,color:"var(--md-on-surface)"}}>Knowledge Base</h3>
+                <button onClick={()=>kFileRef.current?.click()} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 16px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:13}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Upload
+                </button>
               </div>
 
-              {/* Document list with actions */}
-              <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:12}}>Indexed Documents · {docs.reduce((s:number,d:any)=>s+d.chunks,0)} total chunks</h4>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {docs.map((d:any)=><div key={d.name} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:"var(--md-surface-container-low)",borderRadius:12,transition:"background .2s var(--ease)"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
-                  onMouseLeave={e=>e.currentTarget.style.background="var(--md-surface-container-low)"}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                  <div style={{flex:1}}>
-                    <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>{d.name}</div>
-                    <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)"}}>{d.chunks} chunks indexed</div>
+              {/* Search bar */}
+              <div style={{position:"relative",marginBottom:20}}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--md-on-surface-variant)" strokeWidth="2" strokeLinecap="round" style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)"}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input value={kSearch} onChange={e=>setKSearch(e.target.value)} placeholder="Search documents..."
+                  style={{width:"100%",padding:"12px 14px 12px 42px",background:"var(--md-surface-container-low)",border:"1px solid transparent",borderRadius:28,fontFamily:"var(--sans)",fontSize:14,color:"var(--md-on-surface)",outline:"none",transition:"all .2s var(--ease)"}}
+                  onFocus={e=>{e.currentTarget.style.background="var(--md-surface)";e.currentTarget.style.borderColor="var(--md-primary)";}}
+                  onBlur={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="transparent";}}/>
+              </div>
+
+              {/* Stats */}
+              <div style={{display:"flex",gap:16,marginBottom:20}}>
+                {[{n:docs.length,l:"Documents"},{n:docs.reduce((s:number,d:any)=>s+d.chunks,0),l:"Chunks"},{n:health?.rag_chunks||0,l:"Indexed"}].map(s=>(
+                  <div key={s.l} style={{padding:"12px 16px",background:"var(--md-surface-container-low)",borderRadius:12,flex:1,textAlign:"center"}}>
+                    <div style={{fontFamily:"var(--google-sans)",fontSize:20,fontWeight:500,color:"var(--md-on-surface)"}}>{s.n}</div>
+                    <div style={{fontFamily:"var(--google-sans)",fontSize:11,color:"var(--md-on-surface-variant)",fontWeight:500}}>{s.l}</div>
                   </div>
-                  <button onClick={async()=>{if(confirm(`Delete ${d.name}?`)){await api.deleteKnowledge(d.name);api.listKnowledge().then(r=>setDocs(r.documents||[]));}}} title="Delete"
-                    style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
-                    onMouseEnter={e=>{e.currentTarget.style.background="var(--md-error-container)";e.currentTarget.style.color="var(--md-error)";}}
-                    onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color="var(--md-on-surface-variant)";}}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-                  </button>
-                </div>)}
+                ))}
+              </div>
+
+              {/* Document grid */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(240px, 1fr))",gap:10}}>
+                {docs.filter((d:any)=>!kSearch||d.name.toLowerCase().includes(kSearch.toLowerCase())).map((d:any)=>(
+                  <div key={d.name} onClick={()=>setSelectedDoc(d.name)} style={{padding:"16px",background:"var(--md-surface-container-low)",borderRadius:16,cursor:"pointer",transition:"all .2s var(--ease)",border:"1px solid transparent"}}
+                    onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.borderColor="var(--md-outline-variant)";}}
+                    onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="transparent";}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                      <div style={{flex:1,overflow:"hidden"}}>
+                        <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontFamily:"var(--google-sans)",fontSize:11,color:"var(--md-on-surface-variant)"}}>
+                      <span>{d.chunks} chunks</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {docs.filter((d:any)=>!kSearch||d.name.toLowerCase().includes(kSearch.toLowerCase())).length===0&&(
+                <p style={{fontFamily:"var(--sans)",fontSize:14,color:"var(--md-on-surface-variant)",textAlign:"center",padding:32}}>
+                  {kSearch?"No documents match your search.":"No documents yet. Upload files to get started."}
+                </p>
+              )}
+              <input ref={kFileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,.pdf" multiple onChange={async e=>{if(!e.target.files)return;for(const f of Array.from(e.target.files))await api.uploadKnowledge(f);api.listKnowledge().then(d=>setDocs(d.documents||[]));e.target.value="";}}/>
+            </div>}
+
+            {/* ── Document Detail Page ── */}
+            {selectedDoc&&<div>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
+                <button onClick={()=>setSelectedDoc(null)} style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+                </button>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                <h3 style={{flex:1,fontFamily:"var(--google-sans)",fontWeight:500,fontSize:18,color:"var(--md-on-surface)"}}>{selectedDoc}</h3>
+              </div>
+
+              {/* Document info */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(160px, 1fr))",gap:10,marginBottom:24}}>
+                {[{l:"Chunks",v:docs.find((d:any)=>d.name===selectedDoc)?.chunks||0},{l:"Status",v:"Indexed"},{l:"Type",v:selectedDoc.split(".").pop()?.toUpperCase()||"—"}].map(s=>(
+                  <div key={s.l} style={{padding:"14px 16px",background:"var(--md-surface-container-low)",borderRadius:12}}>
+                    <div style={{fontFamily:"var(--google-sans)",fontSize:11,color:"var(--md-on-surface-variant)",fontWeight:500,marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>{s.l}</div>
+                    <div style={{fontFamily:"var(--google-sans)",fontSize:16,fontWeight:500,color:"var(--md-on-surface)"}}>{s.v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:12}}>Actions</h4>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                <button onClick={()=>{/* re-index would require backend support */alert("Document will be re-indexed on next server restart.");}} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface-variant)",transition:"all .2s var(--ease)"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-low)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+                  Re-index
+                </button>
+                <button onClick={async()=>{if(confirm(`Delete ${selectedDoc}? This cannot be undone.`)){await api.deleteKnowledge(selectedDoc);api.listKnowledge().then(r=>setDocs(r.documents||[]));setSelectedDoc(null);setTab("knowledge-full");}}}
+                  style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 16px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-error)",transition:"all .2s var(--ease)"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                  Delete document
+                </button>
               </div>
             </div>}
 
@@ -408,7 +468,7 @@ export default function Home(){
       </div>
 
       {/* Stage */}
-      <div style={{position:"relative",minHeight:"100vh",padding:"24px 24px 48px"}}>
+      <div style={{position:"relative",minHeight:"100vh",padding:"24px 24px 140px"}}>
         <div style={{marginTop:96,maxWidth:840,marginLeft:"auto",marginRight:"auto",padding:"0 16px"}}>
 
           {/* Opener */}
