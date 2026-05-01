@@ -899,12 +899,17 @@ export default function Home(){
           if(event.type==="stage"){
             currentStage=event.name;
             reasoning[event.name]="";
+            // Show which stage we're on
+            const stageLabel:{[k:string]:string}={analyse:"Analysing...",retrieve:"Retrieving...",reason:"Reasoning...",synthesise:"Writing answer..."};
+            setMessages(p=>p.map(m=>m.id===amId?{...m,text:stageLabel[event.name]||"Thinking...",reasoning:{...reasoning}}:m));
           }else if(event.type==="token"){
             reasoning[event.name]=(reasoning[event.name]||"")+event.text;
-            // Update the message in-place with streaming content
-            setMessages(p=>p.map(m=>m.id===amId?{...m,text:reasoning.synthesise||"Reasoning...",reasoning:{...reasoning}}:m));
+            // Show live streaming — display synthesise text if available, otherwise show current stage output
+            const displayText=reasoning.synthesise||`**${currentStage.toUpperCase()}**\n${reasoning[currentStage]||""}`;
+            setMessages(p=>p.map(m=>m.id===amId?{...m,text:displayText,reasoning:{...reasoning}}:m));
           }else if(event.type==="stage_done"){
             reasoning[event.name]=event.output;
+            setMessages(p=>p.map(m=>m.id===amId?{...m,reasoning:{...reasoning}}:m));
           }else if(event.type==="done"){
             finalResponse=event.response||"";
             setMessages(p=>p.map(m=>m.id===amId?{...m,text:finalResponse,reasoning:event.reasoning}:m));

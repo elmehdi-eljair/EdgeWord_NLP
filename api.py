@@ -629,7 +629,7 @@ async def chat_reason(req: ChatRequest, auth: dict = Depends(verify_auth)):
             yield f"data: {_json.dumps(event)}\n\n"
 
     key_manager.log_usage(auth.get("key", "jwt"), "/v1/chat/reason", tokens=0, latency_ms=0)
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
 
 
 @app.post("/v1/chat", response_model=ChatResponse)
