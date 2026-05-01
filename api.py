@@ -26,10 +26,14 @@ from contextlib import asynccontextmanager
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+DIM = "\033[2m"
+RESET = "\033[0m"
 
 # --- Request/Response models ---
 
@@ -89,6 +93,34 @@ class KeyUsageResponse(BaseModel):
     rate_limit: int
     active: bool
 
+class TranscribeResponse(BaseModel):
+    text: str
+    language: str
+    language_probability: float
+    duration_s: float
+    processing_s: float
+    segments: list[dict]
+
+class OCRResponse(BaseModel):
+    text: str
+    word_count: int
+    confidence: float
+    image_size: str
+    processing_ms: float
+    language: str
+
+class ImageClassifyResponse(BaseModel):
+    top_labels: list[dict]
+    image_size: str
+    processing_ms: float
+
+class TTSResponse(BaseModel):
+    output_path: str
+    sample_rate: int
+    size_bytes: int
+    processing_s: float
+    text_length: int
+
 # --- Globals (loaded at startup) ---
 fast_path = None
 compute_path = None
@@ -96,6 +128,10 @@ rag_engine = None
 response_cache = None
 auto_tools = None
 key_manager = None
+stt_engine = None
+tts_engine = None
+ocr_engine = None
+img_classifier = None
 sessions = {}  # session_id -> conversation history
 start_time = None
 
@@ -131,6 +167,7 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global fast_path, compute_path, rag_engine, response_cache, auto_tools, key_manager, start_time
+    global stt_engine, tts_engine, ocr_engine, img_classifier
     import numpy as np
     import onnxruntime as ort
     from transformers import AutoTokenizer
@@ -170,11 +207,43 @@ async def lifespan(app: FastAPI):
     # API Keys
     key_manager = APIKeyManager()
 
+    # Speech-to-Text
+    try:
+        from stt import SpeechToText
+        stt_engine = SpeechToText(model_size="tiny")
+    except Exception as e:
+        print(f"  {DIM}STT: disabled ({e}){RESET}")
+
+    # Text-to-Speech
+    try:
+        from tts import TextToSpeech
+        tts_engine = TextToSpeech()
+    except Exception as e:
+        print(f"  {DIM}TTS: disabled ({e}){RESET}")
+
+    # OCR
+    try:
+        from ocr import OCREngine
+        ocr_engine = OCREngine()
+    except Exception as e:
+        print(f"  {DIM}OCR: disabled ({e}){RESET}")
+
+    # Image Classification
+    try:
+        from image_classifier import ImageClassifier
+        img_classifier = ImageClassifier()
+    except Exception as e:
+        print(f"  {DIM}Image classifier: disabled ({e}){RESET}")
+
     print(f"\nServer ready. Components loaded:")
     print(f"  Fast-Path:    ready")
     print(f"  Compute-Path: {'ready' if compute_path else 'disabled'}")
     print(f"  RAG:          {rag_engine.doc_count if rag_engine else 0} chunks")
     print(f"  Cache:        {response_cache.stats()['entries']} entries")
+    print(f"  STT:          {'ready' if stt_engine else 'disabled'}")
+    print(f"  TTS:          {'ready' if tts_engine else 'disabled'}")
+    print(f"  OCR:          {'ready' if ocr_engine else 'disabled'}")
+    print(f"  Image CLF:    {'ready' if img_classifier else 'disabled'}")
     print(f"  API Keys:     {len([k for k in key_manager.list_keys() if k['is_active']])} active\n")
 
     yield
@@ -404,6 +473,177 @@ async def key_usage(auth: dict = Depends(verify_api_key)):
         rate_limit=auth["rate_limit"],
         active=bool(auth["is_active"]),
     )
+
+
+# --- Audio/Image Endpoints ---
+
+@app.post("/v1/transcribe", response_model=TranscribeResponse)
+async def transcribe(
+    file: UploadFile = File(...),
+    language: str | None = Form(None),
+    auth: dict = Depends(verify_api_key),
+):
+    """Transcribe audio to text using Whisper (CPU)."""
+    if stt_engine is None:
+        raise HTTPException(status_code=503, detail="Speech-to-Text not available")
+
+    # Save uploaded file temporarily
+    import tempfile
+    suffix = Path(file.filename).suffix if file.filename else ".wav"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        result = stt_engine.transcribe(tmp_path, language=language)
+        key_manager.log_usage(auth["key"], "/v1/transcribe", tokens=0, latency_ms=result["processing_s"] * 1000)
+        return TranscribeResponse(**result)
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.post("/v1/speak")
+async def speak(
+    text: str = Form(...),
+    auth: dict = Depends(verify_api_key),
+):
+    """Convert text to speech using Piper TTS. Returns a WAV file."""
+    if tts_engine is None:
+        raise HTTPException(status_code=503, detail="Text-to-Speech not available")
+
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp_path = tmp.name
+
+    result = tts_engine.speak(text, output_path=tmp_path)
+    key_manager.log_usage(auth["key"], "/v1/speak", tokens=0, latency_ms=result["processing_s"] * 1000)
+
+    return FileResponse(
+        tmp_path,
+        media_type="audio/wav",
+        filename="speech.wav",
+        headers={"X-Processing-Seconds": str(result["processing_s"])},
+    )
+
+
+@app.post("/v1/ocr", response_model=OCRResponse)
+async def ocr(
+    file: UploadFile = File(...),
+    language: str = Form("eng"),
+    auth: dict = Depends(verify_api_key),
+):
+    """Extract text from an image using Tesseract OCR."""
+    if ocr_engine is None:
+        raise HTTPException(status_code=503, detail="OCR not available")
+
+    import tempfile
+    suffix = Path(file.filename).suffix if file.filename else ".png"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        result = ocr_engine.extract(tmp_path, lang=language)
+        key_manager.log_usage(auth["key"], "/v1/ocr", tokens=0, latency_ms=result["processing_ms"])
+        return OCRResponse(**result)
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.post("/v1/classify/image", response_model=ImageClassifyResponse)
+async def classify_image(
+    file: UploadFile = File(...),
+    top_k: int = Form(5),
+    auth: dict = Depends(verify_api_key),
+):
+    """Classify an image using MobileNetV2."""
+    if img_classifier is None:
+        raise HTTPException(status_code=503, detail="Image classifier not available")
+
+    import tempfile
+    suffix = Path(file.filename).suffix if file.filename else ".jpg"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        result = img_classifier.classify(tmp_path, top_k=top_k)
+        key_manager.log_usage(auth["key"], "/v1/classify/image", tokens=0, latency_ms=result["processing_ms"])
+        return ImageClassifyResponse(**result)
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.post("/v1/ocr/chat")
+async def ocr_chat(
+    file: UploadFile = File(...),
+    question: str = Form("What does this text say? Summarize it."),
+    session_id: str = Form("default"),
+    auth: dict = Depends(verify_api_key),
+):
+    """Extract text from image with OCR, then chat about it with the LLM."""
+    if ocr_engine is None:
+        raise HTTPException(status_code=503, detail="OCR not available")
+    if compute_path is None:
+        raise HTTPException(status_code=503, detail="Compute-Path not available")
+
+    import tempfile
+    suffix = Path(file.filename).suffix if file.filename else ".png"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        ocr_result = ocr_engine.extract(tmp_path, lang="eng")
+    finally:
+        os.unlink(tmp_path)
+
+    extracted_text = ocr_result["text"]
+    if not extracted_text.strip():
+        return {"response": "No text found in the image.", "ocr": ocr_result}
+
+    # Feed extracted text to chat as tool result
+    tool_context = f"[Tool: OCR] Extracted text from image:\n{extracted_text}"
+
+    session = get_session(session_id)
+    old_history = compute_path.history
+    compute_path.history = session
+
+    prompt = compute_path._build_prompt(question, tool_result=tool_context)
+
+    response_parts = []
+    token_count = 0
+    t0 = time.perf_counter()
+    stream = compute_path.llm.create_completion(
+        prompt, max_tokens=256, stream=True, echo=False, temperature=0.7,
+    )
+    for chunk in stream:
+        tok = chunk["choices"][0]["text"]
+        if "<|im_end|>" in tok or "<|eot_id|>" in tok:
+            break
+        token_count += 1
+        response_parts.append(tok)
+
+    total_s = time.perf_counter() - t0
+    response_text = "".join(response_parts).strip()
+
+    from langchain_core.messages import HumanMessage, AIMessage
+    session.append((HumanMessage(content=question), AIMessage(content=response_text)))
+    compute_path.history = old_history
+
+    key_manager.log_usage(auth["key"], "/v1/ocr/chat", tokens=token_count, latency_ms=total_s * 1000)
+
+    return {
+        "response": response_text,
+        "ocr": ocr_result,
+        "tokens": token_count,
+        "total_s": round(total_s, 3),
+        "session_id": session_id,
+    }
 
 
 def main():
