@@ -295,7 +295,7 @@ function SumDiv({section}:{section:Section}){
 }
 
 /* ── Settings Overlay ── */
-function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:boolean;onClose:()=>void;health:HealthStatus|null;onLogout:()=>void;initialTab?:string}){
+function Settings({open,onClose,health,onLogout,initialTab="profile",autoModeOn=false,setAutoModeOn}:{open:boolean;onClose:()=>void;health:HealthStatus|null;onLogout:()=>void;initialTab?:string;autoModeOn?:boolean;setAutoModeOn?:(v:boolean)=>void}){
   const [tab,setTab]=useState("profile");
   const [profile,setProfile]=useState<any>({});
   const [docs,setDocs]=useState<any[]>([]);
@@ -624,7 +624,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
 
                 {/* Auto-Mode toggle */}
                 <div style={{padding:14,background:autoModeOn?"var(--md-tertiary-container)":"var(--md-surface-container-low)",borderRadius:12,marginBottom:16,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:"all .2s var(--ease)",border:`1px solid ${autoModeOn?"var(--md-tertiary)":"transparent"}`}}
-                  onClick={()=>setAutoModeOn(!autoModeOn)}>
+                  onClick={()=>setAutoModeOn?.(!autoModeOn)}>
                   <div style={{width:40,height:40,borderRadius:12,background:autoModeOn?"var(--md-tertiary)":"var(--md-surface-container)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={autoModeOn?"var(--md-on-tertiary)":"var(--md-on-surface-variant)"} strokeWidth="2" strokeLinecap="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
                   </div>
@@ -1039,7 +1039,7 @@ export default function Home(){
 
       <input ref={fileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,image/*" onChange={e=>{if(!e.target.files)return;setChatFiles(p=>[...p,...Array.from(e.target.files!)]);e.target.value="";}} multiple/>
       <input ref={chatFileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,.pdf,image/*" onChange={e=>{if(!e.target.files)return;setChatFiles(p=>[...p,...Array.from(e.target.files!)]);e.target.value="";}} multiple/>
-      <Settings open={settingsOpen} onClose={()=>setSettingsOpen(false)} health={health} onLogout={()=>setAuthed(false)} initialTab={settingsTab}/>
+      <Settings open={settingsOpen} onClose={()=>setSettingsOpen(false)} health={health} onLogout={()=>setAuthed(false)} initialTab={settingsTab} autoModeOn={autoModeOn} setAutoModeOn={setAutoModeOn}/>
       <DialogProvider/>
     </>
   );
