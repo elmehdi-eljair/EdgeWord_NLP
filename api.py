@@ -664,35 +664,55 @@ async def chat_stream(req: ChatRequest, auth: dict = Depends(verify_auth)):
 
     prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result, system_prompt=effective_system)
 
-    def generate():
-        # Send metadata first
-        yield f"data: {_json.dumps({'type':'meta','sentiment':sentiment,'tool_result':tool_result or None,'rag_sources':rag_sources,'auto_profile':auto_profile,'skill_used':skill_name})}\n\n"
+    import asyncio, queue, threading
 
-        token_count = 0
-        t_start = time.perf_counter()
-        first_token_time = None
+    q: queue.Queue = queue.Queue()
 
-        stream = compute_path.llm.create_completion(
-            prompt, max_tokens=gen_max, stream=True, echo=False,
-            temperature=gen_temp, top_p=gen_top_p, top_k=gen_top_k, repeat_penalty=gen_rep,
-        )
-        for chunk in stream:
-            tok = chunk["choices"][0]["text"]
-            if "<|im_end|>" in tok or "<|eot_id|>" in tok:
+    def _generate_in_thread():
+        try:
+            q.put(f"data: {_json.dumps({'type':'meta','sentiment':sentiment,'tool_result':tool_result or None,'rag_sources':rag_sources,'auto_profile':auto_profile,'skill_used':skill_name})}\n\n")
+
+            token_count = 0
+            t_start = time.perf_counter()
+            first_token_time = None
+
+            stream = compute_path.llm.create_completion(
+                prompt, max_tokens=gen_max, stream=True, echo=False,
+                temperature=gen_temp, top_p=gen_top_p, top_k=gen_top_k, repeat_penalty=gen_rep,
+            )
+            for chunk in stream:
+                tok = chunk["choices"][0]["text"]
+                if "<|im_end|>" in tok or "<|eot_id|>" in tok:
+                    break
+                if first_token_time is None:
+                    first_token_time = time.perf_counter() - t_start
+                token_count += 1
+                q.put(f"data: {_json.dumps({'type':'token','text':tok})}\n\n")
+
+            total = time.perf_counter() - t_start
+            tps = token_count / total if total > 0 else 0
+            ttft = first_token_time if first_token_time is not None else total
+            q.put(f"data: {_json.dumps({'type':'done','tokens':token_count,'tps':round(tps,1),'ttft_s':round(ttft,3),'total_s':round(total,3)})}\n\n")
+        except Exception as e:
+            q.put(f"data: {_json.dumps({'type':'error','detail':str(e)})}\n\n")
+        finally:
+            q.put(None)  # sentinel
+
+    async def async_generate():
+        thread = threading.Thread(target=_generate_in_thread)
+        thread.start()
+        while True:
+            # Poll the queue from the async context
+            while q.empty():
+                await asyncio.sleep(0.01)
+            item = q.get()
+            if item is None:
                 break
-            if first_token_time is None:
-                first_token_time = time.perf_counter() - t_start
-            token_count += 1
-            yield f"data: {_json.dumps({'type':'token','text':tok})}\n\n"
-
-        total = time.perf_counter() - t_start
-        tps = token_count / total if total > 0 else 0
-        ttft = first_token_time if first_token_time is not None else total
-
-        yield f"data: {_json.dumps({'type':'done','tokens':token_count,'tps':round(tps,1),'ttft_s':round(ttft,3),'total_s':round(total,3)})}\n\n"
+            yield item
+        thread.join()
 
     key_manager.log_usage(auth.get("key", "jwt"), "/v1/chat/stream", tokens=0, latency_ms=0)
-    return StreamingResponse(generate(), media_type="text/event-stream",
+    return StreamingResponse(async_generate(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
 
 
@@ -715,12 +735,33 @@ async def chat_reason(req: ChatRequest, auth: dict = Depends(verify_auth)):
 
     engine = ReasoningEngine(compute_path.llm, rag_engine, template=compute_path.template)
 
-    def generate():
-        for event in engine.run(req.message, rag_context=rag_context):
-            yield f"data: {_json.dumps(event)}\n\n"
+    import asyncio, queue, threading
+
+    q2: queue.Queue = queue.Queue()
+
+    def _reason_in_thread():
+        try:
+            for event in engine.run(req.message, rag_context=rag_context):
+                q2.put(f"data: {_json.dumps(event)}\n\n")
+        except Exception as e:
+            q2.put(f"data: {_json.dumps({'type':'error','detail':str(e)})}\n\n")
+        finally:
+            q2.put(None)
+
+    async def async_reason():
+        thread = threading.Thread(target=_reason_in_thread)
+        thread.start()
+        while True:
+            while q2.empty():
+                await asyncio.sleep(0.01)
+            item = q2.get()
+            if item is None:
+                break
+            yield item
+        thread.join()
 
     key_manager.log_usage(auth.get("key", "jwt"), "/v1/chat/reason", tokens=0, latency_ms=0)
-    return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
+    return StreamingResponse(async_reason(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
 
 
 @app.post("/v1/chat", response_model=ChatResponse)
