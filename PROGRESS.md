@@ -1,8 +1,10 @@
 # EdgeWord NLP — Progress Report
 
 **Date:** 2026-05-01  
-**Environment:** Windows 10 Pro · Python 3.13.1 · Intel Core i7 (8 logical cores) · 15.8 GB RAM  
-**Spec reference:** `Technical Specification.txt`
+**Environment:** Ubuntu 24.04 (Linux 6.17.0-20-generic) · Python 3.12.3 · Intel Core i7-4810MQ (4C/8T) · 15.5 GB RAM  
+**Previous environment:** Windows 10 Pro · Python 3.13.1 · Intel Core i7 (8 logical cores) · 15.8 GB RAM  
+**Spec reference:** `Technical Specification.txt`  
+**Full test report:** `TESTING_REPORT.md`
 
 ---
 
@@ -31,18 +33,26 @@
 **Implementation:** `onnxruntime.InferenceSession` · `CPUExecutionProvider` · `ORT_ENABLE_ALL` graph optimisation  
 **Test set:** 12 sentences (sentiment classification)
 
-### Benchmark Results (native Windows, best run)
+### Benchmark Results (native Linux, latest run)
 
 | Metric | Result | SLA | Status |
 |---|---|---|---|
-| Min latency | 10.4 ms | — | — |
-| Median (p50) | 12.7 ms | < 50 ms | **PASS** |
-| p95 latency | 14.5 ms | — | — |
-| Max latency | 15.1 ms | — | — |
-| QPS (100 requests) | 73.8 req/sec | maximise | — |
+| Min latency | 17.6 ms | — | — |
+| Median (p50) | 18.2 ms | < 50 ms | **PASS** |
+| p95 latency | 19.5 ms | — | — |
+| Max latency | 19.6 ms | — | — |
+| QPS (100 requests) | 56.4 req/sec | maximise | — |
 | SLA pass rate | 12 / 12 (100%) | — | **PASS** |
 
-> **Headroom:** median is 3.9× below the 50 ms SLA.
+> **Headroom:** median is 2.7× below the 50 ms SLA.
+
+### Previous Results (Windows 10, Python 3.13.1)
+
+| Metric | Result |
+|---|---|
+| Median (p50) | 12.7 ms |
+| p95 | 14.5 ms |
+| QPS | 73.8 req/sec |
 
 ### Classification Accuracy
 
@@ -56,23 +66,28 @@ All 12 sentences classified correctly at 100% confidence. Sample:
 
 ---
 
-## Scenario 2 Status — Compute-Path (llama.cpp)
+## Scenario 2 Results — Compute-Path (llama.cpp)
 
-**Status: Blocked — in progress**
+**Status: Complete — ALL SLAs PASSED**
 
-### Root Cause
+**Model:** `Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` (469 MB, 4-bit quantised)  
+**Implementation:** `llama-cpp-python` 0.3.21, compiled from source with `-DGGML_AVX2=ON`, `n_gpu_layers=0`  
+**Test set:** 5 technical prompts, 120 max tokens, temperature=0.0
 
-`llama-cpp-python` ships no pre-built wheel for Python 3.13 on Windows. Building from source requires CMake + MSVC/GCC, which are not installed on the test machine. This is a [known open issue](https://github.com/abetlen/llama-cpp-python/issues/2130) in the project.
+### Benchmark Results (native Linux, Ubuntu 24.04)
 
-### Resolution: Docker
+| Threads | Avg TTFT (s) | Avg TPS (t/s) | TTFT SLA (<1s) | TPS SLA (10+) |
+|---|---|---|---|---|
+| 1 | 0.315 | 18.4 | **PASS** | **PASS** |
+| 2 | 0.204 | 27.6 | **PASS** | **PASS** |
+| **4** | **0.246** | **33.5** | **PASS** | **PASS** |
+| 8 | 0.208 | 19.8 | **PASS** | **PASS** |
 
-The `Dockerfile` was created per spec Section 5 ("Initialize a Docker container stripped of CUDA/NVIDIA runtimes"). Inside Ubuntu 22.04, `llama-cpp-python` compiles cleanly with `build-essential` + `cmake`.
+**Optimal config: 4 threads (33.5 t/s)** — matches physical core count. 8-thread performance drops due to hyperthreading contention.
 
-Docker build is currently running (nohup, detached). Once complete:
-```bash
-docker run --rm -v /path/to/models:/models edgeword \
-    python run_scenarios.py --model /models/<model>.gguf
-```
+### Previous Blockers (Resolved)
+
+- `llama-cpp-python` had no pre-built wheel for Python 3.13 on Windows — resolved by running natively on Ubuntu 24.04 with Python 3.12.3 and compiling from source with cmake + gcc.
 
 ---
 
