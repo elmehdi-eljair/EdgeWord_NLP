@@ -208,14 +208,15 @@ function SettingsSheet({ open, onClose, health, onLogout, initialTab }: { open: 
                           <option value="mono">Mono</option>
                         </select>
                       ) : (
-                        <input value={profile[field]||""} onChange={e=>{setProfile((p:any)=>({...p,[field]:e.target.value}));}} onBlur={e=>saveProfile(field,e.target.value)}
+                        <input value={profile[field]||""} placeholder={field==="display_name"?"Your name":field==="email"?"you@example.com":""}
+                          onChange={e=>{setProfile((p:any)=>({...p,[field]:e.target.value}));}} onBlur={e=>saveProfile(field,e.target.value)}
                           style={{ width:"100%",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:8,padding:"9px 12px",fontFamily:"var(--sans)",fontSize:14,color:"var(--ink)",outline:"none" }} />
                       )}
                     </div>
                   </div>
                 ))}
                 <div style={{ marginTop:24 }}>
-                  <button onClick={()=>{ api.logout(); onLogout(); }} style={{ padding:"10px 20px",background:"transparent",border:"1px solid var(--line)",borderRadius:10,cursor:"pointer",fontFamily:"var(--mono)",fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--hot)",transition:"all .25s var(--ease)" }}>
+                  <button onClick={()=>{ if(confirm("Are you sure you want to sign out?")){ api.logout(); onLogout(); } }} style={{ padding:"10px 20px",background:"transparent",border:"1px solid var(--line)",borderRadius:10,cursor:"pointer",fontFamily:"var(--mono)",fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--hot)",transition:"all .25s var(--ease)" }}>
                     SIGN OUT
                   </button>
                 </div>
@@ -279,15 +280,27 @@ function SettingsSheet({ open, onClose, health, onLogout, initialTab }: { open: 
                 </h3>
                 <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:16 }}>
                   {keys.map((k:any)=>(
-                    <div key={k.id} style={{ display:"grid",gridTemplateColumns:"auto 1fr 1fr auto",gap:14,padding:"12px 14px",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:12,alignItems:"center" }}>
-                      <span style={{ width:8,height:8,borderRadius:"50%",background:k.is_active?"var(--lime)":"var(--text-3)",boxShadow:k.is_active?"0 0 10px var(--lime)":"none" }} />
-                      <span style={{ fontFamily:"var(--sans)",fontWeight:500,fontSize:13,color:"var(--ink)" }}>{k.name}</span>
-                      <span style={{ fontFamily:"var(--mono)",fontSize:11,color:"var(--text-2)",letterSpacing:".02em" }}>{k.key_prefix} · {k.total_requests} req</span>
+                    <div key={k.id} style={{ padding:"14px 16px",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:12 }}>
+                      <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8 }}>
+                        <span style={{ width:8,height:8,borderRadius:"50%",background:k.is_active?"var(--lime)":"var(--text-3)",boxShadow:k.is_active?"0 0 10px var(--lime)":"none",flexShrink:0 }} />
+                        <span style={{ fontFamily:"var(--sans)",fontWeight:500,fontSize:13,color:"var(--ink)",flex:1 }}>{k.name}</span>
+                        <span style={{ fontFamily:"var(--mono)",fontSize:9,color:k.is_active?"var(--lime)":"var(--text-3)",letterSpacing:".08em",textTransform:"uppercase" }}>{k.is_active?"ACTIVE":"REVOKED"}</span>
+                      </div>
+                      <div style={{ fontFamily:"var(--mono)",fontSize:11,color:"var(--text-2)",letterSpacing:".02em",marginBottom:6 }}>{k.key_prefix}</div>
+                      <div style={{ display:"flex",gap:12,fontFamily:"var(--mono)",fontSize:9.5,color:"var(--text-3)",letterSpacing:".04em",marginBottom:10 }}>
+                        <span>{k.total_requests} req</span>
+                        <span style={{ width:3,height:3,borderRadius:"50%",background:"var(--text-3)",alignSelf:"center" }} />
+                        <span>{k.total_tokens} tok</span>
+                        <span style={{ width:3,height:3,borderRadius:"50%",background:"var(--text-3)",alignSelf:"center" }} />
+                        <span>{k.created_at ? new Date(k.created_at * 1000).toLocaleDateString([],{day:"numeric",month:"short",year:"numeric"}) + " " + new Date(k.created_at * 1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}) : "—"}</span>
+                      </div>
                       {k.is_active && (
-                        <button onClick={async()=>{ await api.revokeApiKey(k.key_prefix); api.listApiKeys().then(r=>setKeys(r.keys||[])); }}
-                          style={{ fontFamily:"var(--mono)",fontSize:9,letterSpacing:".14em",textTransform:"uppercase",color:"var(--text-2)",cursor:"pointer",background:"transparent",border:"1px solid var(--line)",padding:"6px 10px",borderRadius:6,transition:"all .2s var(--ease)" }}>
-                          REVOKE
-                        </button>
+                        <div style={{ display:"flex",gap:6 }}>
+                          <button onClick={async()=>{ await api.revokeApiKey(k.key_prefix); api.listApiKeys().then(r=>setKeys(r.keys||[])); }}
+                            style={{ fontFamily:"var(--mono)",fontSize:9,letterSpacing:".14em",textTransform:"uppercase",color:"var(--hot)",cursor:"pointer",background:"transparent",border:"1px solid var(--line)",padding:"6px 10px",borderRadius:6,transition:"all .2s var(--ease)" }}>
+                            REVOKE
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -307,9 +320,27 @@ function SettingsSheet({ open, onClose, health, onLogout, initialTab }: { open: 
                   </button>
                 </div>
                 {createdKey && (
-                  <div style={{ marginTop:12,padding:"12px 14px",background:"var(--surface-2)",borderRadius:10,fontFamily:"var(--mono)",fontSize:11,color:"var(--ink)",wordBreak:"break-all" }}>
-                    <span style={{ color:"var(--lime)",fontWeight:600 }}>NEW KEY:</span> {createdKey}
-                    <br/><span style={{ color:"var(--text-3)",fontSize:9 }}>Save this — it won't be shown again.</span>
+                  <div style={{ marginTop:12,padding:"14px 16px",background:"var(--surface-2)",borderRadius:10,border:"1px solid var(--line)" }}>
+                    <div style={{ fontFamily:"var(--mono)",fontSize:11,color:"var(--ink)",wordBreak:"break-all",marginBottom:10,lineHeight:1.5 }}>
+                      <span style={{ color:"var(--lime)",fontWeight:600 }}>NEW KEY:</span> {createdKey}
+                    </div>
+                    <div style={{ display:"flex",gap:8,marginBottom:8 }}>
+                      <button onClick={()=>navigator.clipboard.writeText(createdKey)}
+                        style={{ fontFamily:"var(--mono)",fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink)",cursor:"pointer",background:"var(--surface)",border:"1px solid var(--line-2)",padding:"6px 12px",borderRadius:6,transition:"all .2s var(--ease)" }}>
+                        COPY
+                      </button>
+                      <button onClick={()=>{
+                        const data = JSON.stringify({ key: createdKey, created: new Date().toISOString() }, null, 2);
+                        const blob = new Blob([data], { type: "application/json" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a"); a.href = url; a.download = "edgeword-api-key.json"; a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                        style={{ fontFamily:"var(--mono)",fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink)",cursor:"pointer",background:"var(--surface)",border:"1px solid var(--line-2)",padding:"6px 12px",borderRadius:6,transition:"all .2s var(--ease)" }}>
+                        DOWNLOAD JSON
+                      </button>
+                    </div>
+                    <span style={{ fontFamily:"var(--mono)",fontSize:9,color:"var(--text-3)",letterSpacing:".06em" }}>Save this key — it won't be shown again.</span>
                   </div>
                 )}
               </div>
@@ -466,7 +497,7 @@ export default function Home() {
 
       {/* ── Side Actions (desktop, fixed bottom-left) ── */}
       <nav style={{ position:"fixed",left:36,bottom:160,zIndex:55,display:"flex",flexDirection:"column",gap:6 }} className="hidden md:flex">
-        {[{label:"SETTINGS",onClick:()=>openSettings("profile")},{label:"KNOWLEDGE",onClick:()=>openSettings("knowledge")},{label:"API KEYS",onClick:()=>openSettings("keys")},{label:"SIGN OUT",onClick:()=>{api.logout();setAuthed(false)},danger:true}].map(a=>(
+        {[{label:"SETTINGS",onClick:()=>openSettings("profile")},{label:"KNOWLEDGE",onClick:()=>openSettings("knowledge")},{label:"API KEYS",onClick:()=>openSettings("keys")},{label:"SIGN OUT",onClick:()=>{if(confirm("Are you sure you want to sign out?")){api.logout();setAuthed(false)}},danger:true}].map(a=>(
           <a key={a.label} onClick={a.onClick} style={{ display:"inline-flex",alignItems:"center",gap:10,padding:"8px 12px",background:"var(--surface)",border:"1px solid var(--line)",borderRadius:10,fontFamily:"var(--mono)",fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:a.danger?"var(--hot)":"var(--text-2)",textDecoration:"none",cursor:"pointer",transition:"all .25s var(--ease)",width:"fit-content",backdropFilter:"blur(20px)" }}>
             &#8853; {a.label}
           </a>
