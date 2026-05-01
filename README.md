@@ -95,6 +95,18 @@ Download from [HuggingFace](https://huggingface.co/models?library=gguf&sort=tren
 
 ---
 
+## Documentation
+
+| Document | Description |
+|---|---|
+| [Getting Started](docs/GETTING_STARTED.md) | Installation, setup, and first run |
+| [Architecture](docs/ARCHITECTURE.md) | System design, data flow, and component details |
+| [API Reference](docs/API_REFERENCE.md) | REST API endpoints, request/response formats, examples |
+| [API Key Management](docs/API_KEYS.md) | Creating, revoking, and monitoring API keys |
+| [Testing Report](TESTING_REPORT.md) | Full benchmark results for both scenarios |
+
+---
+
 ## Environment Check
 
 ```bash
