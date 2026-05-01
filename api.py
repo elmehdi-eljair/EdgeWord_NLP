@@ -145,29 +145,46 @@ def get_session(session_id: str):
 
 
 # --- Auth ---
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
+user_manager = None
 
 
-async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """Validate API key from Authorization header."""
-    key = credentials.credentials
-    result = key_manager.validate_key(key)
+async def verify_auth(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Authenticate via JWT token (frontend) or API key (programmatic).
+    JWT tokens start with 'eyJ', API keys start with 'ew_'."""
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    token = credentials.credentials
+
+    # Try JWT first (frontend sessions)
+    if token.startswith("eyJ"):
+        try:
+            from auth import UserManager
+            payload = UserManager.verify_token(token)
+            return {"auth_type": "jwt", "user_id": payload["sub"], "username": payload["username"], "name": payload.get("name", "")}
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    # Try API key (programmatic)
+    result = key_manager.validate_key(token)
     if result is None:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     if "error" in result:
         if result["error"] == "rate_limited":
-            raise HTTPException(
-                status_code=429,
-                detail=f"Rate limit exceeded. Retry after {result.get('retry_after', 60)}s",
-            )
-    return {"key": key, **result}
+            raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Retry after {result.get('retry_after', 60)}s")
+    return {"auth_type": "api_key", "key": token, **result}
+
+
+# Keep old name as alias for backward compat in endpoints
+verify_api_key = verify_auth
 
 
 # --- Lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global fast_path, compute_path, rag_engine, response_cache, auto_tools, key_manager, start_time
-    global stt_engine, tts_engine, ocr_engine, img_classifier
+    global stt_engine, tts_engine, ocr_engine, img_classifier, user_manager
     import numpy as np
     import onnxruntime as ort
     from transformers import AutoTokenizer
@@ -206,6 +223,10 @@ async def lifespan(app: FastAPI):
 
     # API Keys
     key_manager = APIKeyManager()
+
+    # User auth
+    from auth import UserManager
+    user_manager = UserManager()
 
     # Speech-to-Text
     try:
@@ -287,6 +308,39 @@ async def health():
     )
 
 
+class AuthRequest(BaseModel):
+    username: str = Field(..., min_length=3)
+    password: str = Field(..., min_length=6)
+    display_name: str = Field("")
+
+
+@app.post("/v1/auth/register")
+async def register(req: AuthRequest):
+    """Register a new user account."""
+    try:
+        user = user_manager.register(req.username, req.password, req.display_name)
+        token = user_manager.login(req.username, req.password)
+        return {"token": token, "user": user}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/v1/auth/login")
+async def login(req: AuthRequest):
+    """Login and receive a JWT token."""
+    try:
+        token = user_manager.login(req.username, req.password)
+        return {"token": token}
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@app.get("/v1/auth/me")
+async def me(auth: dict = Depends(verify_auth)):
+    """Get current user info from token."""
+    return {"username": auth.get("username", ""), "name": auth.get("name", ""), "auth_type": auth.get("auth_type", "")}
+
+
 @app.post("/v1/classify", response_model=ClassifyResponse)
 async def classify(req: ClassifyRequest, auth: dict = Depends(verify_api_key)):
     """Classify sentiment of a single text."""
@@ -298,7 +352,7 @@ async def classify(req: ClassifyRequest, auth: dict = Depends(verify_api_key)):
 
     scores = {fast_path.id2label.get(i, str(i)): float(p) for i, p in enumerate(probs)}
 
-    key_manager.log_usage(auth["key"], "/v1/classify", tokens=0, latency_ms=ms)
+    key_manager.log_usage(auth.get("key", "jwt"), "/v1/classify", tokens=0, latency_ms=ms)
 
     return ClassifyResponse(
         result=SentimentResult(
@@ -325,7 +379,7 @@ async def classify_batch(req: ClassifyBatchRequest, auth: dict = Depends(verify_
         ))
 
     total_ms = (time.perf_counter() - t0) * 1000
-    key_manager.log_usage(auth["key"], "/v1/classify/batch", tokens=0, latency_ms=total_ms)
+    key_manager.log_usage(auth.get("key", "jwt"), "/v1/classify/batch", tokens=0, latency_ms=total_ms)
 
     return ClassifyBatchResponse(results=results, total_ms=round(total_ms, 2))
 
@@ -366,7 +420,7 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         cached = response_cache.get(req.message)
         if cached:
             total_s = time.perf_counter() - t_total
-            key_manager.log_usage(auth["key"], "/v1/chat", tokens=0, latency_ms=total_s * 1000)
+            key_manager.log_usage(auth.get("key", "jwt"), "/v1/chat", tokens=0, latency_ms=total_s * 1000)
             # Save to session memory
             session = get_session(req.session_id)
             from langchain_core.messages import HumanMessage, AIMessage
@@ -427,7 +481,7 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         response_cache.put(req.message, response_text)
 
     total_s = time.perf_counter() - t_total
-    key_manager.log_usage(auth["key"], "/v1/chat", tokens=token_count, latency_ms=total_s * 1000)
+    key_manager.log_usage(auth.get("key", "jwt"), "/v1/chat", tokens=token_count, latency_ms=total_s * 1000)
 
     return ChatResponse(
         response=response_text,
@@ -497,7 +551,7 @@ async def transcribe(
 
     try:
         result = stt_engine.transcribe(tmp_path, language=language)
-        key_manager.log_usage(auth["key"], "/v1/transcribe", tokens=0, latency_ms=result["processing_s"] * 1000)
+        key_manager.log_usage(auth.get("key", "jwt"), "/v1/transcribe", tokens=0, latency_ms=result["processing_s"] * 1000)
         return TranscribeResponse(**result)
     finally:
         os.unlink(tmp_path)
@@ -517,7 +571,7 @@ async def speak(
         tmp_path = tmp.name
 
     result = tts_engine.speak(text, output_path=tmp_path)
-    key_manager.log_usage(auth["key"], "/v1/speak", tokens=0, latency_ms=result["processing_s"] * 1000)
+    key_manager.log_usage(auth.get("key", "jwt"), "/v1/speak", tokens=0, latency_ms=result["processing_s"] * 1000)
 
     return FileResponse(
         tmp_path,
@@ -546,7 +600,7 @@ async def ocr(
 
     try:
         result = ocr_engine.extract(tmp_path, lang=language)
-        key_manager.log_usage(auth["key"], "/v1/ocr", tokens=0, latency_ms=result["processing_ms"])
+        key_manager.log_usage(auth.get("key", "jwt"), "/v1/ocr", tokens=0, latency_ms=result["processing_ms"])
         return OCRResponse(**result)
     finally:
         os.unlink(tmp_path)
@@ -571,7 +625,7 @@ async def classify_image(
 
     try:
         result = img_classifier.classify(tmp_path, top_k=top_k)
-        key_manager.log_usage(auth["key"], "/v1/classify/image", tokens=0, latency_ms=result["processing_ms"])
+        key_manager.log_usage(auth.get("key", "jwt"), "/v1/classify/image", tokens=0, latency_ms=result["processing_ms"])
         return ImageClassifyResponse(**result)
     finally:
         os.unlink(tmp_path)
@@ -635,7 +689,7 @@ async def ocr_chat(
     session.append((HumanMessage(content=question), AIMessage(content=response_text)))
     compute_path.history = old_history
 
-    key_manager.log_usage(auth["key"], "/v1/ocr/chat", tokens=token_count, latency_ms=total_s * 1000)
+    key_manager.log_usage(auth.get("key", "jwt"), "/v1/ocr/chat", tokens=token_count, latency_ms=total_s * 1000)
 
     return {
         "response": response_text,

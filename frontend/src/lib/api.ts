@@ -2,22 +2,56 @@ import { ChatResponse, HealthStatus } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-function getApiKey(): string {
+function getToken(): string {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem("edgeword_api_key") || "";
+  return localStorage.getItem("edgeword_token") || "";
+}
+
+export function isLoggedIn(): boolean {
+  return !!getToken();
+}
+
+export function logout() {
+  localStorage.removeItem("edgeword_token");
+  localStorage.removeItem("edgeword_user");
 }
 
 function headers(): HeadersInit {
   return {
-    Authorization: `Bearer ${getApiKey()}`,
+    Authorization: `Bearer ${getToken()}`,
     "Content-Type": "application/json",
   };
 }
 
 function authHeaders(): HeadersInit {
   return {
-    Authorization: `Bearer ${getApiKey()}`,
+    Authorization: `Bearer ${getToken()}`,
   };
+}
+
+export async function register(username: string, password: string, displayName = "") {
+  const res = await fetch(`${API_BASE}/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password, display_name: displayName }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Registration failed");
+  localStorage.setItem("edgeword_token", data.token);
+  localStorage.setItem("edgeword_user", JSON.stringify(data.user));
+  return data;
+}
+
+export async function login(username: string, password: string) {
+  const res = await fetch(`${API_BASE}/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Login failed");
+  localStorage.setItem("edgeword_token", data.token);
+  return data;
 }
 
 export async function health(): Promise<HealthStatus> {

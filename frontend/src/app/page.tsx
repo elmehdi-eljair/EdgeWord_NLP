@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import * as api from "@/lib/api";
 import { Message, Attachment, HealthStatus } from "@/lib/types";
+import AuthPage from "@/components/AuthPage";
 import {
   MicIcon, PaperclipIcon, ImageIcon, SendIcon, StopIcon,
   CopyIcon, RefreshIcon, SpeakerIcon, GearIcon, XIcon,
@@ -225,14 +226,12 @@ function EmptyState({ onSuggestion }: { onSuggestion: (t: string) => void }) {
 }
 
 // ── Settings Panel ──────────────────────────────────────
-function SettingsPanel({ open, onClose, health }: { open: boolean; onClose: () => void; health: HealthStatus | null }) {
-  const [apiKey, setApiKey] = useState("");
+function SettingsPanel({ open, onClose, health, onLogout }: { open: boolean; onClose: () => void; health: HealthStatus | null; onLogout: () => void }) {
   const [maxTokens, setMaxTokens] = useState(256);
   const [temperature, setTemperature] = useState(0.7);
 
   useEffect(() => {
     if (!open) return;
-    setApiKey(localStorage.getItem("edgeword_api_key") || "");
     setMaxTokens(Number(localStorage.getItem("edgeword_max_tokens") || "256"));
     setTemperature(Number(localStorage.getItem("edgeword_temperature") || "0.7"));
   }, [open]);
@@ -253,12 +252,6 @@ function SettingsPanel({ open, onClose, health }: { open: boolean; onClose: () =
             <h2 className="text-[16px] sm:text-[14px] font-bold" style={{ letterSpacing: "-0.01em" }}>Settings</h2>
             <button onClick={onClose} className="p-1.5 text-ink-3 hover:text-ink"><XIcon size={18} /></button>
           </div>
-
-          <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-widest block mb-2">API Key</label>
-          <input type="password" value={apiKey}
-            onChange={(e) => { setApiKey(e.target.value); save("edgeword_api_key", e.target.value); }}
-            placeholder="ew_..."
-            className="w-full px-3 py-3 sm:py-2.5 text-[15px] sm:text-[13px] border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent bg-white mb-6 font-mono" />
 
           <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-widest block mb-3">Generation</label>
           <div className="space-y-3 mb-6">
@@ -292,8 +285,14 @@ function SettingsPanel({ open, onClose, health }: { open: boolean; onClose: () =
 
           <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-widest block mb-3">Session</label>
           <button onClick={async () => { await api.clearSession(); onClose(); location.reload(); }}
-            className="w-full sm:w-auto px-4 py-3 sm:py-2 text-[13px] text-red border border-line rounded-xl hover:bg-red-bg transition-colors">
+            className="w-full sm:w-auto px-4 py-3 sm:py-2 text-[13px] text-red border border-line rounded-xl hover:bg-red-bg transition-colors mb-6">
             Clear conversation
+          </button>
+
+          <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-widest block mb-3">Account</label>
+          <button onClick={() => { api.logout(); onLogout(); }}
+            className="w-full sm:w-auto px-4 py-3 sm:py-2 text-[13px] text-ink-3 border border-line rounded-xl hover:bg-bg-2 transition-colors">
+            Sign out
           </button>
         </div>
       </div>
@@ -303,6 +302,7 @@ function SettingsPanel({ open, onClose, health }: { open: boolean; onClose: () =
 
 // ── Main Page ───────────────────────────────────────────
 export default function Home() {
+  const [authed, setAuthed] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -315,6 +315,13 @@ export default function Home() {
   const mediaRecRef = useRef<MediaRecorder | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLInputElement>(null);
+
+  // Check auth on mount
+  useEffect(() => { setAuthed(api.isLoggedIn()); }, []);
+
+  if (!authed) {
+    return <AuthPage onAuth={() => setAuthed(true)} />;
+  }
 
   // Auto-scroll
   useEffect(() => {
@@ -564,7 +571,7 @@ export default function Home() {
         <input ref={imgRef} type="file" className="hidden" accept="image/*" onChange={handleImage} />
       </div>
 
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} health={health} />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} health={health} onLogout={() => setAuthed(false)} />
 
       <style jsx>{`
         .animate-in { animation: slideIn 0.2s ease-out; }
