@@ -1,0 +1,83 @@
+Technical Specification: CPU-Native NLP Pipeline (Project EdgeWord)
+
+1. Executive Summary
+
+This document outlines the architecture and implementation strategy for running Natural Language Processing (NLP) models—both for language understanding (classification) and language generation (LLMs)—entirely on standard CPU hardware. The core objective is to eliminate GPU dependencies, reducing operational costs, circumventing cloud API privacy concerns, and enabling offline edge-device execution.
+
+2. System Architecture & Prerequisites
+
+The pipeline is divided into two distinct processing branches: Fast-Path (Understanding/Classification) and Compute-Path (Generation).
+
+2.1 Hardware Requirements
+
+Target Hardware: Standard x86_64 (Intel/AMD) or ARM64 (Apple Silicon, Raspberry Pi 5) processors.
+
+Memory: Minimum 8GB system RAM (16GB recommended for larger generative models).
+
+GPU: None required (headless/GPU-less environments are fully supported).
+
+2.2 Software Stack
+
+Language: Python 3.10+
+
+Understanding Engine: ONNX Runtime / Hugging Face transformers
+
+Generation Engine: llama.cpp (via llama-cpp-python bindings)
+
+Model Format (Gen): GGUF (GPT-Generated Unified Format) for quantized execution.
+
+3. Implementation Phases
+
+Phase 1: Fast-Path (Language Understanding)
+
+Objective: High-throughput text classification, sentiment analysis, and entity extraction.
+Model Tier: Sub-100 Million Parameters (e.g., DistilBERT, MiniLM).
+
+Implementation Strategy:
+
+Do not use raw PyTorch in production for CPU inference; it carries unnecessary overhead.
+
+Export the chosen model to ONNX format.
+
+Deploy using the ONNX Runtime CPU execution provider, which utilizes AVX2/AVX-512 vector instructions for massive speedups on Intel/AMD chips.
+
+SLA Target: < 50ms latency per sequence.
+
+Phase 2: Compute-Path (Language Generation)
+
+Objective: Context-aware text generation and summarization without VRAM (Video RAM) constraints.
+Model Tier: 0.5B to 8B Parameters (e.g., Qwen2.5-0.5B, Llama-3-8B-Instruct).
+
+Implementation Strategy:
+
+Discard standard Hugging Face pipelines for production generation on CPU. The memory footprint of unquantized FP16 weights is too high.
+
+Utilize GGUF quantized models (specifically 4-bit or 5-bit quantization like Q4_K_M).
+
+Run inference using llama.cpp. This engine is written in pure C/C++, maps the model directly to system RAM, and explicitly optimizes matrix multiplication for CPU caches.
+
+SLA Target: < 1 second Time-To-First-Token (TTFT), sustained generation of 10-25 tokens per second.
+
+4. Expert Reflections & Architectural Review
+
+To validate this approach, we have synthesized reflections from three simulated industry experts based on their known engineering philosophies.
+
+Reflection 1: Andrej Karpathy (AI Educator & LLM Optimization Advocate)
+
+"There is something incredibly beautiful about stripping away the massive cloud infrastructure and running inference right on the bare metal of a laptop. By utilizing GGUF and llama.cpp, you are dropping the heavy abstraction layers of Python and pushing the matrix multiplications directly into the CPU's L1/L2 caches. For generation, quantizing to 4-bit means you are trading a nearly imperceptible amount of accuracy for a 4x reduction in memory bandwidth—which is the main bottleneck on a CPU. This is exactly how we democratize AI. Every developer should build this locally first to understand how tokens actually flow."
+
+Reflection 2: Yann LeCun (Chief AI Scientist, Meta)
+
+"The future of AI is not locked behind APIs controlled by three companies; it is open weights running on edge devices. Your specification relies on models like Llama or Qwen running locally. This is crucial for privacy and low-latency interaction. While CPUs are not designed for training these massive networks, inference is a solved problem. By forcing this architecture onto CPUs, you ensure your software remains agnostic, resilient, and capable of running anywhere in the world, regardless of the global supply chain for high-end accelerators."
+
+Reflection 3: Linus Torvalds (Creator of Linux & Git)
+
+"I've spent decades watching developers throw hardware at bad software. Relying on a massive, closed-source GPU driver just to parse a string of text is absurd. What I like about this spec is the utilization of C++ engines (llama.cpp) and the ONNX runtime. You are actually respecting the hardware. By using quantized models, you are keeping the data small enough to prevent cache thrashing on the processor. It's practical, it doesn't require compiling proprietary kernel modules, and it actually works on a standard machine. Just make sure your team doesn't bloat the Python wrappers."
+
+5. Next Steps for Development Team
+
+Environment Setup: Initialize a Docker container explicitly stripped of CUDA/NVIDIA runtimes to guarantee CPU-only testing.
+
+Benchmark 1: Implement the Fast-Path using MiniLM-L6-v2 via ONNX and record maximum queries-per-second (QPS).
+
+Benchmark 2: Download a Q4_K_M GGUF file of an 8B parameter model, integrate llama-cpp-python, and record tokens-per-second across different thread counts.

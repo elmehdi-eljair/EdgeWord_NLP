@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.tar.gz
+*.whl
+*.gguf
+models/
+.claude/
+*.egg-info/
+.env
