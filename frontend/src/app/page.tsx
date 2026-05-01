@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import * as api from "@/lib/api";
 import { Message, Attachment, HealthStatus, Section } from "@/lib/types";
+import Markdown from "react-markdown";
 import AuthPage from "@/components/AuthPage";
 
 function uid(){return Math.random().toString(36).slice(2,10)}
@@ -150,8 +151,27 @@ function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}
           Something went wrong. Tap the info icon for details.
         </div>
       :
-        <div style={{fontFamily:"var(--sans)",fontSize:15.5,lineHeight:1.6,color:"var(--md-on-surface-variant)",fontWeight:400,maxWidth:"62ch"}}>
-          {msg.text.split("\n").map((p,i)=><p key={i} style={{marginBottom:p?".85em":0}}>{p}</p>)}
+        <div className="msg-body" style={{fontFamily:"var(--sans)",fontSize:15.5,lineHeight:1.6,color:"var(--md-on-surface-variant)",fontWeight:400,maxWidth:"62ch"}}>
+          <Markdown components={{
+            p:({children})=><p style={{marginBottom:".85em"}}>{children}</p>,
+            strong:({children})=><strong style={{fontWeight:500,color:"var(--md-on-surface)"}}>{children}</strong>,
+            em:({children})=><em style={{color:"var(--md-primary)",fontStyle:"normal",fontWeight:500}}>{children}</em>,
+            code:({children,className})=>className?<div style={{margin:"16px 0",background:"var(--md-surface-container-high)",border:"1px solid var(--md-outline-variant)",borderRadius:8,padding:"14px 18px",fontFamily:"var(--mono)",fontSize:13,lineHeight:1.6,color:"var(--md-on-surface)",overflowX:"auto",whiteSpace:"pre"}}>{children}</div>
+              :<code style={{fontFamily:"var(--mono)",fontSize:"0.9em",padding:"2px 6px",background:"var(--md-surface-container)",borderRadius:4,color:"var(--md-on-surface)"}}>{children}</code>,
+            pre:({children})=><>{children}</>,
+            ul:({children})=><ul style={{paddingLeft:20,marginBottom:".85em"}}>{children}</ul>,
+            ol:({children})=><ol style={{paddingLeft:20,marginBottom:".85em"}}>{children}</ol>,
+            li:({children})=><li style={{marginBottom:4}}>{children}</li>,
+            a:({href,children})=><a href={href} target="_blank" rel="noopener" style={{color:"var(--md-primary)",textDecoration:"underline"}}>{children}</a>,
+            h1:({children})=><h1 style={{fontFamily:"var(--google-sans)",fontSize:20,fontWeight:500,color:"var(--md-on-surface)",margin:"16px 0 8px"}}>{children}</h1>,
+            h2:({children})=><h2 style={{fontFamily:"var(--google-sans)",fontSize:18,fontWeight:500,color:"var(--md-on-surface)",margin:"14px 0 6px"}}>{children}</h2>,
+            h3:({children})=><h3 style={{fontFamily:"var(--google-sans)",fontSize:16,fontWeight:500,color:"var(--md-on-surface)",margin:"12px 0 4px"}}>{children}</h3>,
+            blockquote:({children})=><blockquote style={{borderLeft:"3px solid var(--md-primary)",paddingLeft:16,margin:"12px 0",color:"var(--md-on-surface-variant)"}}>{children}</blockquote>,
+            hr:()=><hr style={{border:"none",borderTop:"1px solid var(--md-outline-variant)",margin:"16px 0"}}/>,
+            table:({children})=><div style={{overflowX:"auto",margin:"12px 0"}}><table style={{borderCollapse:"collapse",width:"100%",fontFamily:"var(--sans)",fontSize:13}}>{children}</table></div>,
+            th:({children})=><th style={{padding:"8px 12px",borderBottom:"2px solid var(--md-outline)",textAlign:"left",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,color:"var(--md-on-surface)"}}>{children}</th>,
+            td:({children})=><td style={{padding:"8px 12px",borderBottom:"1px solid var(--md-outline-variant)",color:"var(--md-on-surface-variant)"}}>{children}</td>,
+          }}>{msg.text}</Markdown>
         </div>
       }
       {msg.toolResult&&<div style={{margin:"12px 0",padding:"12px 16px",background:"var(--md-surface-container)",borderRadius:8,fontFamily:"var(--mono)",fontSize:13,color:"var(--md-on-surface-variant)",border:"1px solid var(--md-outline-variant)"}}>{msg.toolResult}</div>}
