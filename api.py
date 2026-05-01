@@ -128,6 +128,7 @@ rag_engine = None
 response_cache = None
 auto_tools = None
 key_manager = None
+conv_store = None
 stt_engine = None
 tts_engine = None
 ocr_engine = None
@@ -184,7 +185,7 @@ verify_api_key = verify_auth
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global fast_path, compute_path, rag_engine, response_cache, auto_tools, key_manager, start_time
-    global stt_engine, tts_engine, ocr_engine, img_classifier, user_manager
+    global stt_engine, tts_engine, ocr_engine, img_classifier, user_manager, conv_store
     import numpy as np
     import onnxruntime as ort
     from transformers import AutoTokenizer
@@ -227,6 +228,10 @@ async def lifespan(app: FastAPI):
     # User auth
     from auth import UserManager
     user_manager = UserManager()
+
+    # Conversation persistence
+    from conversations import ConversationStore
+    conv_store = ConversationStore()
 
     # Speech-to-Text
     try:
@@ -339,6 +344,53 @@ async def login(req: AuthRequest):
 async def me(auth: dict = Depends(verify_auth)):
     """Get current user info from token."""
     return {"username": auth.get("username", ""), "name": auth.get("name", ""), "auth_type": auth.get("auth_type", "")}
+
+
+# ── Conversation persistence endpoints ──
+
+@app.get("/v1/conversation")
+async def get_conversation(auth: dict = Depends(verify_auth)):
+    """Load persisted conversation for current user."""
+    uid = auth.get("sub") or auth.get("user_id", "anonymous")
+    messages = conv_store.get_messages(uid)
+    sections = conv_store.get_sections(uid)
+    settings = conv_store.get_settings(uid)
+    return {"messages": messages, "sections": sections, "settings": settings}
+
+
+@app.post("/v1/conversation/message")
+async def save_message(request: Request, auth: dict = Depends(verify_auth)):
+    """Save a single message to the conversation."""
+    uid = auth.get("sub") or auth.get("user_id", "anonymous")
+    body = await request.json()
+    conv_store.save_message(uid, body)
+    return {"status": "saved"}
+
+
+@app.post("/v1/conversation/section")
+async def save_section(request: Request, auth: dict = Depends(verify_auth)):
+    """Save a conversation section/summary."""
+    uid = auth.get("sub") or auth.get("user_id", "anonymous")
+    body = await request.json()
+    conv_store.save_section(uid, body)
+    return {"status": "saved"}
+
+
+@app.post("/v1/conversation/settings")
+async def save_settings(request: Request, auth: dict = Depends(verify_auth)):
+    """Save user settings (max_tokens, temperature)."""
+    uid = auth.get("sub") or auth.get("user_id", "anonymous")
+    body = await request.json()
+    conv_store.save_settings(uid, body)
+    return {"status": "saved"}
+
+
+@app.delete("/v1/conversation")
+async def clear_conversation(auth: dict = Depends(verify_auth)):
+    """Clear all messages and sections for current user."""
+    uid = auth.get("sub") or auth.get("user_id", "anonymous")
+    conv_store.clear_messages(uid)
+    return {"status": "cleared"}
 
 
 @app.post("/v1/classify", response_model=ClassifyResponse)

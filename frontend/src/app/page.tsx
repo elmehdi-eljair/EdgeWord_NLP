@@ -183,12 +183,12 @@ function SettingsPanel({ open, onClose, health, onLogout }: { open: boolean; onC
           <div className="space-y-6 mb-10">
             <div>
               <div className="flex justify-between mb-2"><span className="text-[13px] text-ink-2">Max tokens</span><span className="text-[13px] font-mono text-violet-500 font-semibold">{maxTokens}</span></div>
-              <input type="range" min="64" max="1024" step="64" value={maxTokens} onChange={e => { setMaxTokens(Number(e.target.value)); save("edgeword_max_tokens", e.target.value); }}
+              <input type="range" min="64" max="1024" step="64" value={maxTokens} onChange={e => { setMaxTokens(Number(e.target.value)); save("edgeword_max_tokens", e.target.value); api.saveSettings({ max_tokens: Number(e.target.value), temperature }); }}
                 className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-violet-500" style={{ background: `linear-gradient(to right, #7B3FEE ${maxTokens/10.24}%, #E5E1F0 ${maxTokens/10.24}%)` }} />
             </div>
             <div>
               <div className="flex justify-between mb-2"><span className="text-[13px] text-ink-2">Temperature</span><span className="text-[13px] font-mono text-violet-500 font-semibold">{temperature.toFixed(1)}</span></div>
-              <input type="range" min="0" max="1.5" step="0.1" value={temperature} onChange={e => { setTemperature(Number(e.target.value)); save("edgeword_temperature", e.target.value); }}
+              <input type="range" min="0" max="1.5" step="0.1" value={temperature} onChange={e => { setTemperature(Number(e.target.value)); save("edgeword_temperature", e.target.value); api.saveSettings({ max_tokens: maxTokens, temperature: Number(e.target.value) }); }}
                 className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-violet-500" style={{ background: `linear-gradient(to right, #7B3FEE ${temperature/1.5*100}%, #E5E1F0 ${temperature/1.5*100}%)` }} />
             </div>
           </div>
@@ -201,7 +201,7 @@ function SettingsPanel({ open, onClose, health, onLogout }: { open: boolean; onC
             </div></>
           )}
           <div className="space-y-3">
-            <button onClick={async () => { await api.clearSession(); onClose(); location.reload(); }} className="w-full py-3.5 text-[14px] font-medium text-ink-3 bg-white rounded-2xl shadow-soft hover:shadow-medium transition-all text-center">Clear conversation</button>
+            <button onClick={async () => { await api.clearConversation(); await api.clearSession(); onClose(); location.reload(); }} className="w-full py-3.5 text-[14px] font-medium text-ink-3 bg-white rounded-2xl shadow-soft hover:shadow-medium transition-all text-center">Clear conversation</button>
             <button onClick={() => { api.logout(); onLogout(); }} className="w-full py-3.5 text-[14px] font-medium text-rose-500 bg-white rounded-2xl shadow-soft hover:shadow-medium transition-all text-center">Sign out</button>
           </div>
         </div>
@@ -235,6 +235,20 @@ export default function Home() {
   useEffect(() => { if (!authed) return; const poll = () => api.health().then(setHealth).catch(() => {}); poll(); const iv = setInterval(poll, 30000); return () => clearInterval(iv); }, [authed]);
   useEffect(() => { if (!textareaRef.current) return; textareaRef.current.style.height = "auto"; textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + "px"; }, [input]);
 
+  // Load persisted conversation on auth
+  useEffect(() => {
+    if (!authed) return;
+    api.loadConversation().then(data => {
+      if (!data) return;
+      if (data.messages?.length) { setMessages(data.messages); setLastSummarized(data.messages.length); }
+      if (data.sections?.length) setSections(data.sections);
+      if (data.settings) {
+        localStorage.setItem("edgeword_max_tokens", String(data.settings.max_tokens || 256));
+        localStorage.setItem("edgeword_temperature", String(data.settings.temperature || 0.7));
+      }
+    }).catch(() => {});
+  }, [authed]);
+
   // Auto-summarize
   useEffect(() => {
     if (messages.length === 0 || generating) return;
@@ -244,7 +258,9 @@ export default function Home() {
     const text = chunk.map(m => `${m.role === "user" ? "User" : "AI"}: ${m.text}`).join("\n");
     setLastSummarized(messages.length);
     api.summarize(text).then(title => {
-      setSections(prev => [...prev, { id: uid(), title, timestamp: chunk[0].timestamp, messageIndex: startIdx, messageCount: chunk.length }]);
+      const sec = { id: uid(), title, timestamp: chunk[0].timestamp, messageIndex: startIdx, messageCount: chunk.length };
+      setSections(prev => [...prev, sec]);
+      api.saveSection(sec);
     });
   }, [messages, generating, lastSummarized]);
 
@@ -254,14 +270,19 @@ export default function Home() {
     if (generating) return;
     const userMsg: Message = { id: uid(), role: "user", text: msg, timestamp: Date.now(), attachments: attachments.length ? [...attachments] : undefined };
     setMessages(p => [...p, userMsg]); setInput(""); setAttachments([]); setGenerating(true);
+    api.saveMessage(userMsg);
     try {
       const imgAtt = userMsg.attachments?.find(a => a.type === "image");
       if (imgAtt) {
         const r = await api.ocrChat(imgAtt.file, msg || "What does this image say?");
-        setMessages(p => [...p, { id: uid(), role: "assistant", text: r.response, tokens: r.tokens, totalS: r.total_s, toolResult: r.ocr ? `[OCR] ${r.ocr.text}` : undefined, timestamp: Date.now() }]);
+        const aiMsg = { id: uid(), role: "assistant" as const, text: r.response, tokens: r.tokens, totalS: r.total_s, toolResult: r.ocr ? `[OCR] ${r.ocr.text}` : undefined, timestamp: Date.now() };
+        setMessages(p => [...p, aiMsg]);
+        api.saveMessage(aiMsg);
       } else {
         const r = await api.chat(msg, { maxTokens: Number(localStorage.getItem("edgeword_max_tokens")||"256"), temperature: Number(localStorage.getItem("edgeword_temperature")||"0.7") });
-        setMessages(p => [...p, { id: uid(), role: "assistant", text: r.response, sentiment: r.sentiment, ragSources: r.rag_sources.length ? r.rag_sources : undefined, toolResult: r.tool_result||undefined, tokens: r.tokens, tps: r.tps, ttft: r.ttft_s, totalS: r.total_s, cached: r.cached, timestamp: Date.now() }]);
+        const aiMsg = { id: uid(), role: "assistant" as const, text: r.response, sentiment: r.sentiment, ragSources: r.rag_sources.length ? r.rag_sources : undefined, toolResult: r.tool_result||undefined, tokens: r.tokens, tps: r.tps, ttft: r.ttft_s, totalS: r.total_s, cached: r.cached, timestamp: Date.now() };
+        setMessages(p => [...p, aiMsg]);
+        api.saveMessage(aiMsg);
       }
     } catch (err: any) { setMessages(p => [...p, { id: uid(), role: "assistant", text: `Error: ${err.message}`, timestamp: Date.now() }]); }
     finally { setGenerating(false); }

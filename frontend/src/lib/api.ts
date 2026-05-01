@@ -173,3 +173,36 @@ export async function keyUsage() {
   });
   return res.json();
 }
+
+// ── Conversation persistence ──
+
+export async function loadConversation() {
+  const res = await fetch(`${API_BASE}/v1/conversation`, { headers: headers() });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function saveMessage(msg: Record<string, any>) {
+  fetch(`${API_BASE}/v1/conversation/message`, {
+    method: "POST", headers: headers(), body: JSON.stringify(msg),
+  }).catch(() => {});
+}
+
+export async function saveSection(section: Record<string, any>) {
+  fetch(`${API_BASE}/v1/conversation/section`, {
+    method: "POST", headers: headers(), body: JSON.stringify(section),
+  }).catch(() => {});
+}
+
+export async function saveSettings(settings: Record<string, any>) {
+  fetch(`${API_BASE}/v1/conversation/settings`, {
+    method: "POST", headers: headers(), body: JSON.stringify(settings),
+  }).catch(() => {});
+}
+
+export async function clearConversation() {
+  const res = await fetch(`${API_BASE}/v1/conversation`, {
+    method: "DELETE", headers: headers(),
+  });
+  return res.json();
+}
