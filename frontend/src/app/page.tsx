@@ -133,7 +133,9 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
   const [selectedDoc,setSelectedDoc]=useState<string|null>(null);
   const [kPage,setKPage]=useState(0);
   const [uploading,setUploading]=useState<string|null>(null);
+  const [gPage,setGPage]=useState(0);
   const K_PER_PAGE=10;
+  const G_PER_PAGE=6;
   const [maxT,setMaxT]=useState(256);
   const [temp,setTemp]=useState(0.7);
   const [variant,setVariant]=useState("classic");
@@ -163,12 +165,12 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
   const saveP=(f:string,v:string)=>{setProfile((p:any)=>({...p,[f]:v}));api.updateProfile({[f]:v});};
   const inputS:React.CSSProperties={width:"100%",background:"var(--md-surface-container-low)",border:"1px solid transparent",borderRadius:8,padding:"10px 14px",fontFamily:"var(--sans)",fontSize:14,color:"var(--md-on-surface)",outline:"none",transition:"all .2s var(--ease)"};
 
-  const tabs=[{id:"profile",label:"Profile"},{id:"appearance",label:"Appearance"},{id:"knowledge",label:"Knowledge"},{id:"model",label:"Model"},{id:"keys",label:"API Keys"}];
+  const tabs=[{id:"profile",label:"Profile"},{id:"appearance",label:"Appearance"},{id:"knowledge-full",label:"Knowledge"},{id:"model",label:"Model"},{id:"keys",label:"API Keys"}];
 
   return(
     <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"64px 24px 24px"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div style={{position:"absolute",inset:0,background:"rgba(32,33,36,.32)",opacity:1,transition:"opacity .25s var(--ease)"}}/>
-      <section style={{position:"relative",width:"100%",maxWidth:(tab==="knowledge-full"||selectedDoc)?1100:880,background:"var(--md-surface)",borderRadius:24,padding:"32px 40px 40px",transform:"translateY(0) scale(1)",boxShadow:"0 24px 38px 3px rgba(60,64,67,.14),0 9px 46px 8px rgba(60,64,67,.12),0 11px 15px -7px rgba(60,64,67,.20)",animation:"settle .35s var(--ease-emph) both",transition:"max-width .35s var(--ease-emph)"}}>
+      <section style={{position:"relative",width:"100%",maxWidth:1100,background:"var(--md-surface)",borderRadius:24,padding:"32px 40px 40px",transform:"translateY(0) scale(1)",boxShadow:"0 24px 38px 3px rgba(60,64,67,.14),0 9px 46px 8px rgba(60,64,67,.12),0 11px 15px -7px rgba(60,64,67,.20)",animation:"settle .35s var(--ease-emph) both"}}>
         <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,paddingBottom:16,borderBottom:"1px solid var(--md-outline-variant)"}}>
           <h2 style={{fontFamily:"var(--google-sans)",fontWeight:400,fontSize:24,color:"var(--md-on-surface)",display:"flex",alignItems:"center",gap:12}}>Settings <span style={{fontFamily:"var(--google-sans)",fontSize:12,color:"var(--md-on-surface-variant)",fontWeight:500,padding:"4px 10px",background:"var(--md-surface-container)",borderRadius:999}}>workspace</span></h2>
           <button onClick={onClose} style={{background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-primary)",padding:"8px 14px",transition:"background .2s var(--ease)"}}
@@ -178,7 +180,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
 
         <div style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:32}}>
           <div style={{display:"flex",flexDirection:"column",gap:2}}>
-            {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{textAlign:"left",background:tab===t.id?"var(--md-primary-container)":"transparent",border:0,cursor:"pointer",padding:"10px 16px",borderRadius:999,fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,color:tab===t.id?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",letterSpacing:".01em",transition:"background .2s var(--ease)"}}>{t.label}</button>)}
+            {tabs.map(t=>{const isActive=tab===t.id||(t.id==="knowledge-full"&&(tab==="knowledge-gallery"||selectedDoc));return<button key={t.id} onClick={()=>{setTab(t.id);setSelectedDoc(null);}} style={{textAlign:"left",background:isActive?"var(--md-primary-container)":"transparent",border:0,cursor:"pointer",padding:"10px 16px",borderRadius:999,fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,color:isActive?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",letterSpacing:".01em",transition:"background .2s var(--ease)"}}>{t.label}</button>;})}
           </div>
 
           <div style={{minHeight:300}}>
@@ -234,30 +236,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
             </div>}
 
             {/* ── Knowledge ── */}
-            {tab==="knowledge"&&<div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-                <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)"}}>Knowledge · {docs.length} documents</h3>
-                {/* Fullscreen knowledge management button */}
-                <button onClick={()=>{setTab("knowledge-full");}} title="Manage knowledge" style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
-                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
-                </button>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-                {docs.map((d:any)=><div key={d.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",background:"var(--md-surface-container-low)",borderRadius:12}}>
-                  <span style={{fontFamily:"var(--google-sans)",fontSize:13.5,fontWeight:500,color:"var(--md-on-surface)"}}>{d.name}</span>
-                  <span style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--md-on-surface-variant)"}}>{d.chunks} chunks</span>
-                </div>)}
-                {docs.length===0&&<p style={{fontFamily:"var(--sans)",fontSize:13,color:"var(--md-on-surface-variant)",padding:16,textAlign:"center"}}>No documents yet. Upload files to build your knowledge base.</p>}
-              </div>
-              <button onClick={()=>kFileRef.current?.click()} style={{padding:"10px 20px",background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-primary)",transition:"background .2s var(--ease)"}}
-                onMouseEnter={e=>e.currentTarget.style.background="var(--md-primary-container)"}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>Add Knowledge</button>
-              <input ref={kFileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,.pdf" multiple onChange={async e=>{if(!e.target.files)return;for(const f of Array.from(e.target.files))await api.uploadKnowledge(f);api.listKnowledge().then(d=>setDocs(d.documents||[]));e.target.value="";}}/>
-            </div>}
-
-            {/* ── Knowledge Fullscreen ── */}
+            {/* ── Knowledge ── */}
             {tab==="knowledge-full"&&!selectedDoc&&(()=>{
               const filteredDocs=docs.filter((d:any)=>!kSearch||d.name.toLowerCase().includes(kSearch.toLowerCase()));
               const totalPages=Math.ceil(filteredDocs.length/K_PER_PAGE);
@@ -265,11 +244,6 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
               return <div>
               {/* Header */}
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-                <button onClick={()=>{setTab("knowledge");setKSearch("");setKPage(0);}} style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
-                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
-                </button>
                 <h3 style={{flex:1,fontFamily:"var(--google-sans)",fontWeight:500,fontSize:20,color:"var(--md-on-surface)"}}>Knowledge Base</h3>
               </div>
 
@@ -348,8 +322,9 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                 Install pre-built knowledge packs to augment your AI with domain expertise. Each pack adds curated content for RAG retrieval.
               </p>
 
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))",gap:12}}>
-                {GALLERY.map(g=><div key={g.id} style={{padding:20,background:"var(--md-surface-container-low)",borderRadius:16,transition:"all .2s var(--ease)",border:"1px solid transparent",cursor:"pointer"}}
+              {(()=>{const gTotal=Math.ceil(GALLERY.length/G_PER_PAGE);const paged=GALLERY.slice(gPage*G_PER_PAGE,(gPage+1)*G_PER_PAGE);return<>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))",gap:12,marginBottom:16}}>
+                {paged.map(g=><div key={g.id} style={{padding:20,background:"var(--md-surface-container-low)",borderRadius:16,transition:"all .2s var(--ease)",border:"1px solid transparent",cursor:"pointer"}}
                   onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.borderColor="var(--md-outline-variant)";}}
                   onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="transparent";}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
@@ -365,6 +340,12 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                   </button>
                 </div>)}
               </div>
+              {gTotal>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                <button disabled={gPage===0} onClick={()=>setGPage(p=>p-1)} style={{padding:"8px 14px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:gPage===0?"default":"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:gPage===0?"var(--md-outline)":"var(--md-on-surface-variant)",opacity:gPage===0?.4:1}}>Previous</button>
+                <span style={{fontFamily:"var(--google-sans)",fontSize:13,color:"var(--md-on-surface-variant)"}}>{gPage+1} of {gTotal}</span>
+                <button disabled={gPage>=gTotal-1} onClick={()=>setGPage(p=>p+1)} style={{padding:"8px 14px",background:"transparent",border:"1px solid var(--md-outline)",borderRadius:999,cursor:gPage>=gTotal-1?"default":"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:gPage>=gTotal-1?"var(--md-outline)":"var(--md-on-surface-variant)",opacity:gPage>=gTotal-1?.4:1}}>Next</button>
+              </div>}
+              </>;})()}
             </div>}
 
             {/* ── Document Detail Page ── */}
@@ -470,7 +451,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                     <span>{k.created_at?new Date(k.created_at*1000).toLocaleDateString([],{day:"numeric",month:"short",year:"numeric"})+" "+new Date(k.created_at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"—"}</span>
                   </div>
                   {k.is_active&&<div style={{display:"flex",gap:6}}>
-                    <button onClick={async()=>{await api.revokeApiKey(k.key_prefix);api.listApiKeys().then(r=>setKeys(r.keys||[]));}} style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-error)",background:"transparent",border:0,cursor:"pointer",padding:"6px 12px",borderRadius:999,transition:"background .2s var(--ease)"}}
+                    <button onClick={async()=>{if(!confirm(`Revoke key "${k.name}"? This cannot be undone.`))return;await api.revokeApiKey(k.key_prefix);api.listApiKeys().then(r=>setKeys(r.keys||[]));}} style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-error)",background:"transparent",border:0,cursor:"pointer",padding:"6px 12px",borderRadius:999,transition:"background .2s var(--ease)"}}
                       onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>Revoke</button>
                   </div>}
@@ -527,6 +508,8 @@ export default function Home(){
   const [sections,setSections]=useState<Section[]>([]);
   const [lastSum,setLastSum]=useState(0);
   const [recording,setRecording]=useState(false);
+  const [chatFiles,setChatFiles]=useState<File[]>([]);
+  const chatFileRef=useRef<HTMLInputElement>(null);
   const scrollRef=useRef<HTMLDivElement>(null);
   const taRef=useRef<HTMLTextAreaElement>(null);
   const mediaRef=useRef<MediaRecorder|null>(null);
@@ -550,16 +533,33 @@ export default function Home(){
   useEffect(()=>{if(!messages.length||generating||messages.length-lastSum<SECTION_EVERY)return;const si=lastSum;const ch=messages.slice(si);const txt=ch.map(m=>`${m.role==="user"?"User":"AI"}: ${m.text}`).join("\n");setLastSum(messages.length);api.summarize(txt).then(title=>{const sec={id:uid(),title,timestamp:ch[0].timestamp,messageIndex:si,messageCount:ch.length};setSections(p=>[...p,sec]);api.saveSection(sec);});},[messages,generating,lastSum]);
 
   const send=useCallback(async(text?:string)=>{
-    const msg=text||input.trim();if(!msg)return;if(generating)return;
-    const um:Message={id:uid(),role:"user",text:msg,timestamp:Date.now()};
-    setMessages(p=>[...p,um]);setInput("");setGenerating(true);api.saveMessage(um);
+    const msg=text||input.trim();if(!msg&&!chatFiles.length)return;if(generating)return;
+
+    // If files attached, read their content and prepend to message
+    let fullMsg=msg;
+    if(chatFiles.length>0){
+      const fileContents:string[]=[];
+      for(const f of chatFiles){
+        if(f.type.startsWith("image/")){
+          // For images, use OCR
+          try{const r=await api.ocr(f);fileContents.push(`[File: ${f.name}]\n${r.text}`);}catch{fileContents.push(`[File: ${f.name}] (could not read image)`);}
+        }else{
+          // For text files, read content
+          try{const content=await f.text();fileContents.push(`[File: ${f.name}]\n${content.slice(0,3000)}${content.length>3000?"...(truncated)":""}`);}catch{fileContents.push(`[File: ${f.name}] (could not read)`);}
+        }
+      }
+      fullMsg=fileContents.join("\n\n")+"\n\n"+(msg||"Analyse these files.");
+    }
+
+    const um:Message={id:uid(),role:"user",text:msg||(chatFiles.map(f=>f.name).join(", ")),timestamp:Date.now()};
+    setMessages(p=>[...p,um]);setInput("");setChatFiles([]);setGenerating(true);api.saveMessage(um);
     try{
-      const r=await api.chat(msg,{maxTokens:Number(localStorage.getItem("edgeword_max_tokens")||"256"),temperature:Number(localStorage.getItem("edgeword_temperature")||"0.7")});
+      const r=await api.chat(fullMsg,{maxTokens:Number(localStorage.getItem("edgeword_max_tokens")||"256"),temperature:Number(localStorage.getItem("edgeword_temperature")||"0.7")});
       const am:Message={id:uid(),role:"assistant",text:r.response,sentiment:r.sentiment,ragSources:r.rag_sources.length?r.rag_sources:undefined,toolResult:r.tool_result||undefined,tokens:r.tokens,tps:r.tps,ttft:r.ttft_s,totalS:r.total_s,cached:r.cached,timestamp:Date.now()};
       setMessages(p=>[...p,am]);api.saveMessage(am);
     }catch(err:any){setMessages(p=>[...p,{id:uid(),role:"assistant",text:`Error: ${err.message}`,timestamp:Date.now()}]);}
     finally{setGenerating(false);}
-  },[input,generating]);
+  },[input,generating,chatFiles]);
 
   const toggleRec=async()=>{if(recording){mediaRef.current?.stop();setRecording(false);return;}try{const s=await navigator.mediaDevices.getUserMedia({audio:true});const rec=new MediaRecorder(s);const ch:Blob[]=[];rec.ondataavailable=e=>ch.push(e.data);rec.onstop=async()=>{s.getTracks().forEach(t=>t.stop());try{const r=await api.transcribe(new File([new Blob(ch,{type:"audio/webm"})],"r.webm",{type:"audio/webm"}));if(r.text)setInput(p=>p+(p?" ":"")+r.text);}catch{}};rec.start();mediaRef.current=rec;setRecording(true);}catch{}};
 
@@ -625,7 +625,18 @@ export default function Home(){
 
       {/* Composer — fixed bottom */}
       <div style={{position:"fixed",left:"50%",bottom:0,transform:"translateX(-50%)",width:"100%",maxWidth:840,padding:"16px 16px 24px",background:`linear-gradient(to top,var(--md-surface) 0%,var(--md-surface) 65%,transparent 100%)`,zIndex:40}} className="pb-safe">
-        <div style={{display:"flex",alignItems:"flex-end",gap:10,padding:"var(--composer-pad)",background:"var(--md-surface-container)",border:"1px solid transparent",borderRadius:28,transition:"all .2s var(--ease)"}}>
+        <div style={{background:"var(--md-surface-container)",border:"1px solid transparent",borderRadius:28,transition:"all .2s var(--ease)",overflow:"hidden"}}>
+          {/* Attached files preview */}
+          {chatFiles.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"10px 16px 0"}}>
+            {chatFiles.map((f,i)=><span key={i} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",background:"var(--md-primary-container)",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-on-primary-container)"}}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+              {f.name}
+              <button onClick={()=>setChatFiles(p=>p.filter((_,j)=>j!==i))} style={{background:"none",border:0,cursor:"pointer",color:"var(--md-on-primary-container)",display:"flex",padding:0}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </span>)}
+          </div>}
+          <div style={{display:"flex",alignItems:"flex-end",gap:10,padding:"var(--composer-pad)"}}>
           <textarea ref={taRef} value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}
             placeholder="Message EdgeWord..."
@@ -639,15 +650,17 @@ export default function Home(){
             <button onClick={toggleRec} title="voice" style={{width:36,height:36,borderRadius:"50%",background:recording?"var(--md-error-container)":"transparent",border:0,cursor:"pointer",color:recording?"var(--md-error)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v4"/></svg>
             </button>
-            <button onClick={()=>send()} disabled={!input.trim()} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px",background:input.trim()?"var(--md-primary)":"var(--md-surface-container-high)",color:input.trim()?"var(--md-on-primary)":"var(--md-on-surface-variant)",border:0,borderRadius:999,cursor:input.trim()?"pointer":"default",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,letterSpacing:".01em",transition:"all .2s var(--ease)",boxShadow:input.trim()?`0 1px 2px 0 var(--md-shadow),0 1px 3px 1px var(--md-shadow-2)`:"none"}}>
+            <button onClick={()=>send()} disabled={!input.trim()&&!chatFiles.length} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px",background:(input.trim()||chatFiles.length)?"var(--md-primary)":"var(--md-surface-container-high)",color:(input.trim()||chatFiles.length)?"var(--md-on-primary)":"var(--md-on-surface-variant)",border:0,borderRadius:999,cursor:(input.trim()||chatFiles.length)?"pointer":"default",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,letterSpacing:".01em",transition:"all .2s var(--ease)",boxShadow:(input.trim()||chatFiles.length)?`0 1px 2px 0 var(--md-shadow),0 1px 3px 1px var(--md-shadow-2)`:"none"}}>
               Send
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a1 1 0 0 0-1.39 1.18L4.5 11l8 1-8 1-2.49 6.22a1 1 0 0 0 1.39 1.18z"/></svg>
             </button>
           </div>
         </div>
+        </div>{/* close composer inner wrapper */}
       </div>
 
-      <input ref={fileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,image/*" onChange={async e=>{if(!e.target.files)return;/* handle */e.target.value="";}}/>
+      <input ref={fileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,image/*" onChange={e=>{if(!e.target.files)return;setChatFiles(p=>[...p,...Array.from(e.target.files!)]);e.target.value="";}} multiple/>
+      <input ref={chatFileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,.pdf,image/*" onChange={e=>{if(!e.target.files)return;setChatFiles(p=>[...p,...Array.from(e.target.files!)]);e.target.value="";}} multiple/>
       <Settings open={settingsOpen} onClose={()=>setSettingsOpen(false)} health={health} onLogout={()=>setAuthed(false)} initialTab={settingsTab}/>
     </>
   );
