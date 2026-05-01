@@ -3,6 +3,14 @@ import { ChatResponse, HealthStatus } from "./types";
 // Always use the proxy — works both locally and via ngrok
 const API_BASE = "/api";
 
+// SSE base — direct backend connection for streaming (bypasses proxy buffering)
+// Set NEXT_PUBLIC_SSE_URL for remote deployments, or auto-detect on localhost
+const SSE_BASE = typeof window !== "undefined"
+  ? (process.env.NEXT_PUBLIC_SSE_URL
+    || (window.location.hostname === "localhost" ? "http://localhost:8000" : "")
+    || `${window.location.origin}/api`)
+  : "http://localhost:8000";
+
 function getToken(): string {
   if (typeof window === "undefined") return "";
   return localStorage.getItem("edgeword_token") || "";
@@ -223,10 +231,7 @@ export async function chatStream(
     useRag?: boolean; useTools?: boolean;
   } = {}
 ): Promise<void> {
-  // Call backend directly for SSE (Next.js proxy/routes buffer streams)
-  const sseBase = typeof window !== "undefined" && window.location.hostname === "localhost"
-    ? "http://localhost:8000" : `${typeof window !== "undefined" ? window.location.origin : ""}/api`;
-  const res = await fetch(`${sseBase}/v1/chat/stream`, {
+  const res = await fetch(`${SSE_BASE}/v1/chat/stream`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
@@ -271,11 +276,7 @@ export async function chatReason(
   onEvent: (event: any) => void,
   opts: { useRag?: boolean } = {}
 ): Promise<void> {
-  // SSE must bypass proxy — detect backend URL for direct connection
-  const sseBase = typeof window !== "undefined"
-    ? (window.location.hostname === "localhost" ? "http://localhost:8000" : `${window.location.origin}/api`)
-    : "http://localhost:8000";
-  const res = await fetch(`${sseBase}/v1/chat/reason`, {
+  const res = await fetch(`${SSE_BASE}/v1/chat/reason`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
