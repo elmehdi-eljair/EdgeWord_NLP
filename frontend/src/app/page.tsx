@@ -3,6 +3,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import * as api from "@/lib/api";
 import { Message, Attachment, HealthStatus, Section } from "@/lib/types";
 import Markdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import AuthPage from "@/components/AuthPage";
 
 function uid(){return Math.random().toString(36).slice(2,10)}
@@ -156,10 +158,15 @@ function CodeBlock({code,lang}:{code:string;lang:string}){
           </>}
         </button>
       </div>
-      {/* Code */}
-      <div style={{padding:"16px 20px",fontFamily:"var(--mono)",fontSize:13,lineHeight:1.8,color:"#CDD6F4",overflowX:"auto",whiteSpace:"pre",WebkitOverflowScrolling:"touch",tabSize:2}}>
-        {code}
-      </div>
+      {/* Code with syntax highlighting */}
+      <SyntaxHighlighter
+        language={lang||"text"}
+        style={oneDark}
+        customStyle={{margin:0,padding:"16px 20px",background:"#1E1E2E",fontSize:13,lineHeight:1.8,borderRadius:0}}
+        codeTagProps={{style:{fontFamily:"var(--mono)"}}}
+        showLineNumbers={code.split("\n").length>3}
+        lineNumberStyle={{color:"rgba(205,214,244,.2)",fontSize:11,minWidth:"2em",paddingRight:12,userSelect:"none"}}
+      >{code}</SyntaxHighlighter>
     </div>
   );
 }
