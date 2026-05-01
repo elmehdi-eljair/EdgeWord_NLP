@@ -32,6 +32,24 @@ const GALLERY=[
   {id:"writing-comm",name:"Writing & Communication",desc:"Business writing, storytelling, presentations, copywriting.",category:"General",icon:"edit_note"},
 ];
 
+/* Scenario templates */
+const SCENARIOS=[
+  {id:"general",name:"General Assistant",icon:"chat",desc:"Balanced, helpful, concise responses",temp:0.7,maxT:256,ctx:4096,topP:0.9,topK:40,rep:1.1,prompt:"You are EdgeWord Assistant, a helpful AI running locally. Be concise, accurate, and friendly."},
+  {id:"creative",name:"Creative Writer",icon:"edit",desc:"Expressive, imaginative, longer output",temp:1.0,maxT:1024,ctx:4096,topP:0.95,topK:80,rep:1.0,prompt:"You are a creative writing assistant. Be expressive, use vivid language, metaphors, and narrative techniques. Take creative risks."},
+  {id:"coder",name:"Code Engineer",icon:"code",desc:"Precise, technical, code-focused",temp:0.2,maxT:512,ctx:4096,topP:0.8,topK:20,rep:1.2,prompt:"You are a senior software engineer. Write clean, efficient code. Explain technical concepts precisely. Use proper formatting for code blocks."},
+  {id:"analyst",name:"Data Analyst",icon:"chart",desc:"Structured, analytical, data-driven",temp:0.3,maxT:512,ctx:4096,topP:0.85,topK:30,rep:1.15,prompt:"You are a data analyst. Provide structured, quantitative analysis. Use tables, bullet points, and clear metrics. Be precise with numbers."},
+];
+
+/* Model gallery (mock) */
+const MODEL_GALLERY=[
+  {id:"llama-1b",name:"Llama 3.2 1B",size:"771 MB",ram:"1.2 GB",tps:"~15 t/s",status:"installed",desc:"Fast, good quality. Current default."},
+  {id:"qwen-05b",name:"Qwen 2.5 0.5B",size:"469 MB",ram:"800 MB",tps:"~33 t/s",status:"available",desc:"Fastest. Lower quality on complex tasks."},
+  {id:"llama-3b",name:"Llama 3.2 3B",size:"2.0 GB",ram:"3 GB",tps:"~8 t/s",status:"available",desc:"Better reasoning. Needs more RAM."},
+  {id:"mistral-7b",name:"Mistral 7B",size:"4.1 GB",ram:"5.5 GB",tps:"~4 t/s",status:"available",desc:"Strong general model. Requires 8+ GB free RAM."},
+  {id:"phi-3",name:"Phi-3 Mini 3.8B",size:"2.3 GB",ram:"3.5 GB",tps:"~7 t/s",status:"available",desc:"Microsoft's compact powerhouse. Great at reasoning."},
+  {id:"llama-8b",name:"Llama 3 8B",size:"4.6 GB",ram:"5.5 GB",tps:"~3 t/s",status:"available",desc:"Spec target. Best quality but slow on this CPU."},
+];
+
 const K_STATUSES:{[k:string]:{label:string;color:string;bg:string}}={
   available:{label:"Available",color:"var(--md-on-surface-variant)",bg:"var(--md-surface-container)"},
   installing:{label:"Installing",color:"var(--md-tertiary)",bg:"var(--md-tertiary-container)"},
@@ -137,6 +155,14 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
   const K_PER_PAGE=10;
   const G_PER_PAGE=6;
   const [maxT,setMaxT]=useState(256);
+  const [ctxWin,setCtxWin]=useState(4096);
+  const [topP,setTopP]=useState(0.9);
+  const [topK,setTopK]=useState(40);
+  const [repPen,setRepPen]=useState(1.1);
+  const [sysPrompt,setSysPrompt]=useState("You are EdgeWord Assistant, a helpful AI. Be concise and clear.");
+  const [modelTab,setModelTab]=useState("config");
+  const [scenarioName,setScenarioName]=useState("");
+  const [customScenarios,setCustomScenarios]=useState<any[]>([]);
   const [temp,setTemp]=useState(0.7);
   const [variant,setVariant]=useState("classic");
   const [theme,setTheme]=useState("light");
@@ -420,15 +446,151 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
 
             {/* ── Model ── */}
             {tab==="model"&&<div>
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Model</h3>
-              {[["Active model",health?.model?.replace(".gguf","")||"—","text"],["Temperature",temp,"temp"],["Max tokens",maxT,"tokens"]].map(([k,v,t])=>(
-                <div key={String(k)} style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:24,padding:"16px 0",borderTop:"1px solid var(--md-outline-variant)",alignItems:"center"}}>
-                  <span style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface-variant)"}}>{k}</span>
-                  {t==="temp"?<input type="number" step="0.1" value={temp} onChange={e=>{setTemp(Number(e.target.value));localStorage.setItem("edgeword_temperature",e.target.value);api.saveSettings({max_tokens:maxT,temperature:Number(e.target.value)});}} style={{...inputS,width:120}}/>
-                  :t==="tokens"?<input type="number" value={maxT} onChange={e=>{setMaxT(Number(e.target.value));localStorage.setItem("edgeword_max_tokens",e.target.value);api.saveSettings({max_tokens:Number(e.target.value),temperature:temp});}} style={{...inputS,width:120}}/>
-                  :<span style={{fontFamily:"var(--mono)",fontSize:12.5,color:"var(--md-on-surface-variant)"}}>{v}</span>}
+              {/* Sub-tabs */}
+              <div style={{display:"flex",gap:4,marginBottom:16}}>
+                {[{id:"config",l:"Configuration"},{id:"scenarios",l:"Scenarios"},{id:"gallery",l:"Model Gallery"}].map(t=>
+                  <button key={t.id} onClick={()=>setModelTab(t.id)} style={{padding:"8px 14px",background:modelTab===t.id?"var(--md-primary-container)":"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:modelTab===t.id?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",transition:"all .2s var(--ease)"}}>{t.l}</button>
+                )}
+              </div>
+
+              {/* ── Configuration ── */}
+              {modelTab==="config"&&<div>
+                {/* Active model */}
+                <div style={{padding:14,background:"var(--md-surface-container-low)",borderRadius:12,marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:40,height:40,borderRadius:12,background:"var(--md-primary-container)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="2" strokeLinecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>{health?.model?.replace(".gguf","").replace("Llama-3.2-1B-Instruct-Q4_K_M","Llama 3.2 1B")||"No model"}</div>
+                    <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)"}}>Q4_K_M · CPU · 4 threads</div>
+                  </div>
+                  <StatusChip status="ready"/>
                 </div>
-              ))}
+
+                {/* System Prompt */}
+                <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:8}}>System Prompt</h4>
+                <textarea value={sysPrompt} onChange={e=>setSysPrompt(e.target.value)} rows={3}
+                  style={{width:"100%",padding:"12px 14px",background:"var(--md-surface-container-low)",border:"1px solid transparent",borderRadius:12,fontFamily:"var(--sans)",fontSize:13,color:"var(--md-on-surface)",outline:"none",resize:"vertical",lineHeight:1.6,marginBottom:16,transition:"all .2s var(--ease)"}}
+                  onFocus={e=>{e.currentTarget.style.borderColor="var(--md-primary)";e.currentTarget.style.background="var(--md-surface)";}}
+                  onBlur={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.background="var(--md-surface-container-low)";}}/>
+
+                {/* Parameters grid */}
+                <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Parameters</h4>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+                  {/* Each parameter as a mini card with slider */}
+                  {[
+                    {l:"Temperature",v:temp,set:(n:number)=>{setTemp(n);localStorage.setItem("edgeword_temperature",String(n));api.saveSettings({max_tokens:maxT,temperature:n});},min:0,max:2,step:0.05,desc:"Randomness"},
+                    {l:"Max Tokens",v:maxT,set:(n:number)=>{setMaxT(n);localStorage.setItem("edgeword_max_tokens",String(n));api.saveSettings({max_tokens:n,temperature:temp});},min:64,max:2048,step:64,desc:"Output length"},
+                    {l:"Context Window",v:ctxWin,set:setCtxWin,min:512,max:8192,step:512,desc:"Memory size"},
+                    {l:"Top-P",v:topP,set:setTopP,min:0,max:1,step:0.05,desc:"Nucleus sampling"},
+                    {l:"Top-K",v:topK,set:setTopK,min:1,max:100,step:1,desc:"Token candidates"},
+                    {l:"Repeat Penalty",v:repPen,set:setRepPen,min:1.0,max:2.0,step:0.05,desc:"Repetition control"},
+                  ].map(p=>(
+                    <div key={p.l} style={{padding:12,background:"var(--md-surface-container-low)",borderRadius:12}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                        <div>
+                          <div style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-on-surface)"}}>{p.l}</div>
+                          <div style={{fontFamily:"var(--google-sans)",fontSize:10,color:"var(--md-on-surface-variant)"}}>{p.desc}</div>
+                        </div>
+                        <span style={{fontFamily:"var(--mono)",fontSize:13,fontWeight:500,color:"var(--md-primary)",minWidth:48,textAlign:"right"}}>{p.step<1?p.v.toFixed(2):p.v}</span>
+                      </div>
+                      <input type="range" min={p.min} max={p.max} step={p.step} value={p.v} onChange={e=>p.set(Number(e.target.value))}
+                        style={{width:"100%",height:4,borderRadius:2,appearance:"none",cursor:"pointer",accentColor:"var(--md-primary)",background:`linear-gradient(to right, var(--md-primary) ${(p.v-p.min)/(p.max-p.min)*100}%, var(--md-outline-variant) ${(p.v-p.min)/(p.max-p.min)*100}%)`}}/>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Save as scenario */}
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input value={scenarioName} onChange={e=>setScenarioName(e.target.value)} placeholder="Save as scenario..." style={{...inputS,flex:1}}/>
+                  <button onClick={()=>{if(!scenarioName.trim())return;setCustomScenarios(p=>[...p,{id:uid(),name:scenarioName.trim(),temp,maxT,ctx:ctxWin,topP,topK,rep:repPen,prompt:sysPrompt}]);setScenarioName("");}}
+                    style={{padding:"10px 16px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:13,whiteSpace:"nowrap"}}>Save</button>
+                </div>
+              </div>}
+
+              {/* ── Scenarios ── */}
+              {modelTab==="scenarios"&&<div>
+                <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Pre-built Scenarios</h4>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+                  {SCENARIOS.map(s=>(
+                    <div key={s.id} onClick={()=>{setTemp(s.temp);setMaxT(s.maxT);setCtxWin(s.ctx);setTopP(s.topP);setTopK(s.topK);setRepPen(s.rep);setSysPrompt(s.prompt);localStorage.setItem("edgeword_temperature",String(s.temp));localStorage.setItem("edgeword_max_tokens",String(s.maxT));api.saveSettings({max_tokens:s.maxT,temperature:s.temp});setModelTab("config");}}
+                      style={{padding:16,background:"var(--md-surface-container-low)",borderRadius:16,cursor:"pointer",transition:"all .2s var(--ease)",border:"1px solid transparent"}}
+                      onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.borderColor="var(--md-outline-variant)";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="transparent";}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <div style={{width:32,height:32,borderRadius:10,background:"var(--md-primary-container)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="2" strokeLinecap="round">
+                            {s.icon==="chat"&&<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>}
+                            {s.icon==="edit"&&<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></>}
+                            {s.icon==="code"&&<><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></>}
+                            {s.icon==="chart"&&<><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></>}
+                          </svg>
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>{s.name}</div>
+                        </div>
+                      </div>
+                      <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)",lineHeight:1.5,marginBottom:8}}>{s.desc}</div>
+                      <div style={{fontFamily:"var(--mono)",fontSize:10,color:"var(--md-on-surface-variant)",display:"flex",flexWrap:"wrap",gap:6}}>
+                        <span>T:{s.temp}</span><span>Tok:{s.maxT}</span><span>P:{s.topP}</span><span>K:{s.topK}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Custom scenarios */}
+                {customScenarios.length>0&&<>
+                  <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Your Scenarios</h4>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    {customScenarios.map(s=>(
+                      <div key={s.id} onClick={()=>{setTemp(s.temp);setMaxT(s.maxT);setCtxWin(s.ctx);setTopP(s.topP);setTopK(s.topK);setRepPen(s.rep);setSysPrompt(s.prompt);localStorage.setItem("edgeword_temperature",String(s.temp));localStorage.setItem("edgeword_max_tokens",String(s.maxT));api.saveSettings({max_tokens:s.maxT,temperature:s.temp});setModelTab("config");}}
+                        style={{padding:14,background:"var(--md-surface-container-low)",borderRadius:14,cursor:"pointer",transition:"all .2s var(--ease)",border:"1px solid transparent",display:"flex",alignItems:"center",gap:10}}
+                        onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.borderColor="var(--md-outline-variant)";}}
+                        onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="transparent";}}>
+                        <div style={{width:28,height:28,borderRadius:8,background:"var(--md-tertiary-container)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--md-tertiary)" strokeWidth="2" strokeLinecap="round"><path d="M12 2v20"/><path d="M2 12h20"/></svg>
+                        </div>
+                        <div>
+                          <div style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface)"}}>{s.name}</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:10,color:"var(--md-on-surface-variant)"}}>T:{s.temp} · Tok:{s.maxT}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>}
+              </div>}
+
+              {/* ── Model Gallery ── */}
+              {modelTab==="gallery"&&<div>
+                <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Available Models</h4>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  {MODEL_GALLERY.map(m=>(
+                    <div key={m.id} style={{padding:16,background:"var(--md-surface-container-low)",borderRadius:16,transition:"all .2s var(--ease)",border:"1px solid transparent"}}
+                      onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.borderColor="var(--md-outline-variant)";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="transparent";}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                        <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>{m.name}</div>
+                        <StatusChip status={m.status}/>
+                      </div>
+                      <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)",lineHeight:1.5,marginBottom:10}}>{m.desc}</div>
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                        <span style={{padding:"3px 8px",background:"var(--md-surface-container)",borderRadius:6,fontFamily:"var(--mono)",fontSize:10,color:"var(--md-on-surface-variant)"}}>{m.size}</span>
+                        <span style={{padding:"3px 8px",background:"var(--md-surface-container)",borderRadius:6,fontFamily:"var(--mono)",fontSize:10,color:"var(--md-on-surface-variant)"}}>RAM: {m.ram}</span>
+                        <span title="Estimated performance on this machine" style={{padding:"3px 8px",background:"var(--md-surface-container)",borderRadius:6,fontFamily:"var(--mono)",fontSize:10,color:"var(--md-primary)",display:"flex",alignItems:"center",gap:4,cursor:"help"}}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                          {m.tps}
+                        </span>
+                      </div>
+                      {m.status==="available"&&<button onClick={()=>alert(`Downloading ${m.name}... This would download the GGUF model in a real implementation.`)}
+                        style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 14px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Download
+                      </button>}
+                      {m.status==="installed"&&<span style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-success)"}}>Currently active</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>}
             </div>}
 
             {/* ── API Keys ── */}
