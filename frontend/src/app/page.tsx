@@ -131,25 +131,33 @@ function AsstAvatar(){
 function CodeBlock({code,lang}:{code:string;lang:string}){
   const [copied,setCopied]=useState(false);
   return(
-    <div style={{margin:"16px 0",borderRadius:12,overflow:"hidden",border:"1px solid var(--md-outline-variant)"}}>
-      {/* Header bar */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px 8px 16px",background:"var(--md-surface-container-highest)"}}>
-        <span style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-surface-variant)",letterSpacing:".04em",textTransform:"uppercase"}}>{lang||"code"}</span>
+    <div style={{margin:"16px 0",borderRadius:14,overflow:"hidden",background:"#1E1E2E",boxShadow:"0 2px 8px rgba(0,0,0,.15)"}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px 10px 18px",background:"#181825",borderBottom:"1px solid rgba(255,255,255,.06)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {/* Traffic light dots */}
+          <div style={{display:"flex",gap:5}}>
+            <span style={{width:10,height:10,borderRadius:"50%",background:"#F38BA8"}}/>
+            <span style={{width:10,height:10,borderRadius:"50%",background:"#FAB387"}}/>
+            <span style={{width:10,height:10,borderRadius:"50%",background:"#A6E3A1"}}/>
+          </div>
+          <span style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"rgba(205,214,244,.5)",letterSpacing:".04em"}}>{lang||"code"}</span>
+        </div>
         <button onClick={()=>{navigator.clipboard.writeText(code);setCopied(true);setTimeout(()=>setCopied(false),1500);}}
-          style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:copied?"var(--md-primary)":"var(--md-on-surface-variant)",transition:"all .2s var(--ease)"}}
-          onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
-          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 12px",background:copied?"rgba(166,227,161,.12)":"rgba(205,214,244,.06)",border:"1px solid rgba(205,214,244,.08)",borderRadius:8,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:copied?"#A6E3A1":"rgba(205,214,244,.6)",transition:"all .2s"}}
+          onMouseEnter={e=>{if(!copied){e.currentTarget.style.background="rgba(205,214,244,.1)";e.currentTarget.style.color="rgba(205,214,244,.9)";}}}
+          onMouseLeave={e=>{if(!copied){e.currentTarget.style.background="rgba(205,214,244,.06)";e.currentTarget.style.color="rgba(205,214,244,.6)";}}}>
           {copied?<>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
             Copied
           </>:<>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             Copy
           </>}
         </button>
       </div>
-      {/* Code content */}
-      <div style={{padding:"14px 18px",background:"var(--md-surface-container-high)",fontFamily:"var(--mono)",fontSize:13,lineHeight:1.7,color:"var(--md-on-surface)",overflowX:"auto",whiteSpace:"pre",WebkitOverflowScrolling:"touch"}}>
+      {/* Code */}
+      <div style={{padding:"16px 20px",fontFamily:"var(--mono)",fontSize:13,lineHeight:1.8,color:"#CDD6F4",overflowX:"auto",whiteSpace:"pre",WebkitOverflowScrolling:"touch",tabSize:2}}>
         {code}
       </div>
     </div>
