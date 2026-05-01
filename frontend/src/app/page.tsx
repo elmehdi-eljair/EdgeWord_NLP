@@ -227,6 +227,27 @@ function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}
         </div>
       }
       {msg.toolResult&&<div style={{margin:"12px 0",padding:"12px 16px",background:"var(--md-surface-container)",borderRadius:8,fontFamily:"var(--mono)",fontSize:13,color:"var(--md-on-surface-variant)",border:"1px solid var(--md-outline-variant)"}}>{msg.toolResult}</div>}
+      {/* Reasoning chain — collapsible stages */}
+      {msg.reasoning&&Object.keys(msg.reasoning).length>0&&(()=>{
+        const [expanded,setExpanded]=useState(false);
+        const stages=["analyse","retrieve","reason","synthesise"];
+        const stageLabels:{[k:string]:string}={analyse:"Analyse",retrieve:"Retrieve",reason:"Reason",synthesise:"Synthesise"};
+        const stageIcons:{[k:string]:string}={analyse:"search",retrieve:"library",reason:"psychology",synthesise:"edit"};
+        return <div style={{margin:"12px 0"}}>
+          <button onClick={()=>setExpanded(!expanded)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"var(--md-primary-container)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-primary-container)",transition:"all .2s var(--ease)"}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{transform:expanded?"rotate(90deg)":"rotate(0)",transition:"transform .2s"}}><polyline points="9 18 15 12 9 6"/></svg>
+            Reasoning chain · {Object.keys(msg.reasoning).length} stages
+          </button>
+          {expanded&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+            {stages.filter(s=>msg.reasoning![s]).map(s=>(
+              <div key={s} style={{padding:"10px 14px",background:"var(--md-surface-container-low)",borderRadius:10,borderLeft:"3px solid var(--md-primary)"}}>
+                <div style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-primary)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>{stageLabels[s]||s}</div>
+                <div style={{fontFamily:"var(--sans)",fontSize:13,lineHeight:1.6,color:"var(--md-on-surface-variant)",whiteSpace:"pre-wrap"}}>{msg.reasoning![s]}</div>
+              </div>
+            ))}
+          </div>}
+        </div>;
+      })()}
       {msg.ragSources&&msg.ragSources.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{msg.ragSources.map((s,i)=><span key={i} style={{padding:"4px 10px",background:"var(--md-primary-container)",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-primary-container)"}}>{s}</span>)}</div>}
       {!isError&&msg.tokens!=null&&<div style={{marginTop:8,fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)",opacity:.6}}>{msg.tokens} tok{msg.tps!=null&&` · ${msg.tps.toFixed(1)} t/s`}{msg.cached&&" · cached"}</div>}
       {/* Action icons — copy + re-run */}
@@ -805,6 +826,7 @@ export default function Home(){
   const [recording,setRecording]=useState(false);
   const [chatFiles,setChatFiles]=useState<File[]>([]);
   const [autoModeOn,setAutoModeOn]=useState(false);
+  const [reasoningOn,setReasoningOn]=useState(false);
   const chatFileRef=useRef<HTMLInputElement>(null);
   const scrollRef=useRef<HTMLDivElement>(null);
   const taRef=useRef<HTMLTextAreaElement>(null);
@@ -850,17 +872,45 @@ export default function Home(){
     const um:Message={id:uid(),role:"user",text:msg||(chatFiles.map(f=>f.name).join(", ")),timestamp:Date.now()};
     setMessages(p=>[...p,um]);setInput("");setChatFiles([]);setGenerating(true);api.saveMessage(um);
     try{
-      const r=await api.chat(fullMsg,{
-        maxTokens:Number(localStorage.getItem("edgeword_max_tokens")||"256"),
-        temperature:Number(localStorage.getItem("edgeword_temperature")||"0.7"),
-        topP:Number(localStorage.getItem("edgeword_top_p")||"0.9"),
-        topK:Number(localStorage.getItem("edgeword_top_k")||"40"),
-        repeatPenalty:Number(localStorage.getItem("edgeword_repeat_penalty")||"1.1"),
-        systemPrompt:localStorage.getItem("edgeword_system_prompt")||"",
-        autoMode:autoModeOn,
-      });
-      const am:Message={id:uid(),role:"assistant",text:r.response,sentiment:r.sentiment,ragSources:r.rag_sources.length?r.rag_sources:undefined,toolResult:r.tool_result||undefined,tokens:r.tokens,tps:r.tps,ttft:r.ttft_s,totalS:r.total_s,cached:r.cached,autoProfile:r.auto_profile||undefined,skillUsed:r.skill_used||undefined,timestamp:Date.now()};
-      setMessages(p=>[...p,am]);api.saveMessage(am);
+      if(reasoningOn){
+        // Reasoning mode — SSE streaming
+        const reasoning:Record<string,string>={};
+        let currentStage="";
+        let finalResponse="";
+        // Add a placeholder message that we'll update
+        const amId=uid();
+        setMessages(p=>[...p,{id:amId,role:"assistant",text:"",reasoning:{},timestamp:Date.now()}]);
+        await api.chatReason(fullMsg,(event)=>{
+          if(event.type==="stage"){
+            currentStage=event.name;
+            reasoning[event.name]="";
+          }else if(event.type==="token"){
+            reasoning[event.name]=(reasoning[event.name]||"")+event.text;
+            // Update the message in-place with streaming content
+            setMessages(p=>p.map(m=>m.id===amId?{...m,text:reasoning.synthesise||"Reasoning...",reasoning:{...reasoning}}:m));
+          }else if(event.type==="stage_done"){
+            reasoning[event.name]=event.output;
+          }else if(event.type==="done"){
+            finalResponse=event.response||"";
+            setMessages(p=>p.map(m=>m.id===amId?{...m,text:finalResponse,reasoning:event.reasoning}:m));
+          }
+        });
+        const am:Message={id:amId,role:"assistant",text:finalResponse||reasoning.synthesise||"",reasoning,timestamp:Date.now()};
+        api.saveMessage(am);
+      }else{
+        // Normal mode
+        const r=await api.chat(fullMsg,{
+          maxTokens:Number(localStorage.getItem("edgeword_max_tokens")||"256"),
+          temperature:Number(localStorage.getItem("edgeword_temperature")||"0.7"),
+          topP:Number(localStorage.getItem("edgeword_top_p")||"0.9"),
+          topK:Number(localStorage.getItem("edgeword_top_k")||"40"),
+          repeatPenalty:Number(localStorage.getItem("edgeword_repeat_penalty")||"1.1"),
+          systemPrompt:localStorage.getItem("edgeword_system_prompt")||"",
+          autoMode:autoModeOn,
+        });
+        const am:Message={id:uid(),role:"assistant",text:r.response,sentiment:r.sentiment,ragSources:r.rag_sources.length?r.rag_sources:undefined,toolResult:r.tool_result||undefined,tokens:r.tokens,tps:r.tps,ttft:r.ttft_s,totalS:r.total_s,cached:r.cached,autoProfile:r.auto_profile||undefined,skillUsed:r.skill_used||undefined,timestamp:Date.now()};
+        setMessages(p=>[...p,am]);api.saveMessage(am);
+      }
     }catch(err:any){setMessages(p=>[...p,{id:uid(),role:"assistant",text:`Error: ${err.message}`,timestamp:Date.now()}]);}
     finally{setGenerating(false);}
   },[input,generating,chatFiles]);
@@ -952,6 +1002,12 @@ export default function Home(){
               style={{height:28,padding:"0 10px",borderRadius:999,background:autoModeOn?"var(--md-tertiary-container)":"transparent",border:`1px solid ${autoModeOn?"var(--md-tertiary)":"var(--md-outline)"}`,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:autoModeOn?"var(--md-tertiary)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",gap:5,transition:"all .2s var(--ease)",whiteSpace:"nowrap"}}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
               Auto
+            </button>
+            {/* Reasoning toggle */}
+            <button onClick={()=>setReasoningOn(!reasoningOn)} title={reasoningOn?"Reasoning ON":"Reasoning OFF"}
+              style={{height:28,padding:"0 10px",borderRadius:999,background:reasoningOn?"var(--md-primary-container)":"transparent",border:`1px solid ${reasoningOn?"var(--md-primary)":"var(--md-outline)"}`,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:reasoningOn?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",gap:5,transition:"all .2s var(--ease)",whiteSpace:"nowrap"}}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              Reason
             </button>
             <button onClick={()=>fileRef.current?.click()} title="attach" style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
               onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}

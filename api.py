@@ -605,6 +605,33 @@ async def classify_batch(req: ClassifyBatchRequest, auth: dict = Depends(verify_
     return ClassifyBatchResponse(results=results, total_ms=round(total_ms, 2))
 
 
+@app.post("/v1/chat/reason")
+async def chat_reason(req: ChatRequest, auth: dict = Depends(verify_auth)):
+    """Reasoning mode — multi-stage chain-of-thought with SSE streaming."""
+    if compute_path is None:
+        raise HTTPException(status_code=503, detail="Compute-Path not available")
+
+    from fastapi.responses import StreamingResponse
+    from reasoning import ReasoningEngine
+    import json as _json
+
+    # RAG retrieval
+    rag_context = ""
+    if req.use_rag and rag_engine:
+        results = rag_engine.retrieve(req.message, top_k=3)
+        if results and results[0]["score"] > 0.3:
+            rag_context = rag_engine.format_context(results)
+
+    engine = ReasoningEngine(compute_path.llm, rag_engine, template=compute_path.template)
+
+    def generate():
+        for event in engine.run(req.message, rag_context=rag_context):
+            yield f"data: {_json.dumps(event)}\n\n"
+
+    key_manager.log_usage(auth.get("key", "jwt"), "/v1/chat/reason", tokens=0, latency_ms=0)
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @app.post("/v1/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
     """Chat with the LLM — includes RAG, tools, cache, and conversation memory."""

@@ -214,6 +214,45 @@ export async function saveSettings(settings: Record<string, any>) {
   }).catch(() => {});
 }
 
+export async function chatReason(
+  message: string,
+  onEvent: (event: any) => void,
+  opts: { useRag?: boolean } = {}
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/chat/reason`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      message,
+      use_rag: opts.useRag ?? true,
+      session_id: "web-ui",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `API error ${res.status}`);
+  }
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try {
+          const event = JSON.parse(line.slice(6));
+          onEvent(event);
+        } catch {}
+      }
+    }
+  }
+}
+
 export async function clearConversation() {
   const res = await fetch(`${API_BASE}/v1/conversation`, {
     method: "DELETE", headers: headers(),
