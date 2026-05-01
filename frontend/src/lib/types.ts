@@ -19,6 +19,9 @@ export interface Message {
   cached?: boolean;
   timestamp: number;
   attachments?: Attachment[];
+  autoProfile?: string;
+  skillUsed?: string;
+  reasoning?: Record<string, string>;
 }
 
 export interface Attachment {
@@ -50,6 +53,8 @@ export interface ChatResponse {
   total_s: number;
   cached: boolean;
   session_id: string;
+  auto_profile: string | null;
+  skill_used: string | null;
 }
 
 export interface Section {

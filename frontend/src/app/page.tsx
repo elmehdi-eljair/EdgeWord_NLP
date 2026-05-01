@@ -184,6 +184,8 @@ function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
         <span style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,color:isError?"var(--md-error)":"var(--md-on-surface)"}}>{isUser?"You":isError?"Error":"EdgeWord"}</span>
         <span style={{fontFamily:"var(--google-sans)",fontSize:12,color:"var(--md-on-surface-variant)",fontWeight:400}}>{fmtTime(msg.timestamp)}</span>
+        {msg.autoProfile&&<span style={{padding:"2px 8px",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:10,fontWeight:500,color:"var(--md-tertiary)",background:"var(--md-tertiary-container)"}}>auto: {msg.autoProfile}</span>}
+        {msg.skillUsed&&<span style={{padding:"2px 8px",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:10,fontWeight:500,color:"var(--md-secondary)",background:"var(--md-secondary-container)"}}>skill: {msg.skillUsed}</span>}
         {isError&&<button onClick={()=>customAlert(msg.text)} title="View error details" style={{width:28,height:28,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-error)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
           onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
           onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -802,6 +804,7 @@ export default function Home(){
   const [lastSum,setLastSum]=useState(0);
   const [recording,setRecording]=useState(false);
   const [chatFiles,setChatFiles]=useState<File[]>([]);
+  const [autoModeOn,setAutoModeOn]=useState(false);
   const chatFileRef=useRef<HTMLInputElement>(null);
   const scrollRef=useRef<HTMLDivElement>(null);
   const taRef=useRef<HTMLTextAreaElement>(null);
@@ -847,8 +850,16 @@ export default function Home(){
     const um:Message={id:uid(),role:"user",text:msg||(chatFiles.map(f=>f.name).join(", ")),timestamp:Date.now()};
     setMessages(p=>[...p,um]);setInput("");setChatFiles([]);setGenerating(true);api.saveMessage(um);
     try{
-      const r=await api.chat(fullMsg,{maxTokens:Number(localStorage.getItem("edgeword_max_tokens")||"256"),temperature:Number(localStorage.getItem("edgeword_temperature")||"0.7")});
-      const am:Message={id:uid(),role:"assistant",text:r.response,sentiment:r.sentiment,ragSources:r.rag_sources.length?r.rag_sources:undefined,toolResult:r.tool_result||undefined,tokens:r.tokens,tps:r.tps,ttft:r.ttft_s,totalS:r.total_s,cached:r.cached,timestamp:Date.now()};
+      const r=await api.chat(fullMsg,{
+        maxTokens:Number(localStorage.getItem("edgeword_max_tokens")||"256"),
+        temperature:Number(localStorage.getItem("edgeword_temperature")||"0.7"),
+        topP:Number(localStorage.getItem("edgeword_top_p")||"0.9"),
+        topK:Number(localStorage.getItem("edgeword_top_k")||"40"),
+        repeatPenalty:Number(localStorage.getItem("edgeword_repeat_penalty")||"1.1"),
+        systemPrompt:localStorage.getItem("edgeword_system_prompt")||"",
+        autoMode:autoModeOn,
+      });
+      const am:Message={id:uid(),role:"assistant",text:r.response,sentiment:r.sentiment,ragSources:r.rag_sources.length?r.rag_sources:undefined,toolResult:r.tool_result||undefined,tokens:r.tokens,tps:r.tps,ttft:r.ttft_s,totalS:r.total_s,cached:r.cached,autoProfile:r.auto_profile||undefined,skillUsed:r.skill_used||undefined,timestamp:Date.now()};
       setMessages(p=>[...p,am]);api.saveMessage(am);
     }catch(err:any){setMessages(p=>[...p,{id:uid(),role:"assistant",text:`Error: ${err.message}`,timestamp:Date.now()}]);}
     finally{setGenerating(false);}
@@ -936,6 +947,12 @@ export default function Home(){
             placeholder="Message EdgeWord..."
             rows={1} style={{flex:1,background:"transparent",border:0,outline:0,resize:"none",fontFamily:"var(--sans)",fontSize:15,lineHeight:1.5,color:"var(--md-on-surface)",fontWeight:400,minHeight:24,maxHeight:200,padding:"8px 0"}}/>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {/* Auto-mode toggle */}
+            <button onClick={()=>setAutoModeOn(!autoModeOn)} title={autoModeOn?"Auto-mode ON":"Auto-mode OFF"}
+              style={{height:28,padding:"0 10px",borderRadius:999,background:autoModeOn?"var(--md-tertiary-container)":"transparent",border:`1px solid ${autoModeOn?"var(--md-tertiary)":"var(--md-outline)"}`,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:autoModeOn?"var(--md-tertiary)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",gap:5,transition:"all .2s var(--ease)",whiteSpace:"nowrap"}}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
+              Auto
+            </button>
             <button onClick={()=>fileRef.current?.click()} title="attach" style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
               onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>

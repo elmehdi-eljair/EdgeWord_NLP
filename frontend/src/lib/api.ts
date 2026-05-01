@@ -73,6 +73,7 @@ export async function chat(
     useRag?: boolean;
     useTools?: boolean;
     useCache?: boolean;
+    autoMode?: boolean;
   } = {}
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/v1/chat`, {
@@ -90,6 +91,7 @@ export async function chat(
       use_rag: opts.useRag ?? true,
       use_tools: opts.useTools ?? true,
       use_cache: opts.useCache ?? true,
+      auto_mode: opts.autoMode ?? false,
     }),
   });
   if (!res.ok) {

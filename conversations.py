@@ -72,6 +72,12 @@ class ConversationStore:
                 self.conn.execute(f"ALTER TABLE user_settings ADD COLUMN {col} DEFAULT {default}")
             except Exception:
                 pass
+        # Migrate messages table for reasoning/auto/skills
+        for col, default in [("reasoning_json", "NULL"), ("auto_profile", "NULL"), ("skill_used", "NULL")]:
+            try:
+                self.conn.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT DEFAULT {default}")
+            except Exception:
+                pass
         self.conn.commit()
 
     # ── Messages ──
@@ -80,8 +86,9 @@ class ConversationStore:
         cur = self.conn.execute(
             """INSERT INTO messages
                (user_id, session_id, role, text, sentiment_json, rag_sources_json,
-                tool_result, tokens, tps, ttft, total_s, cached, attachments_json, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                tool_result, tokens, tps, ttft, total_s, cached, attachments_json, timestamp,
+                reasoning_json, auto_profile, skill_used)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id, session_id, msg["role"], msg["text"],
                 json.dumps(msg.get("sentiment")) if msg.get("sentiment") else None,
@@ -91,6 +98,9 @@ class ConversationStore:
                 1 if msg.get("cached") else 0,
                 json.dumps([{"name": a["name"], "type": a["type"]} for a in msg.get("attachments", [])]) if msg.get("attachments") else None,
                 msg["timestamp"],
+                json.dumps(msg.get("reasoning")) if msg.get("reasoning") else None,
+                msg.get("autoProfile"),
+                msg.get("skillUsed"),
             ),
         )
         self.conn.commit()
@@ -126,6 +136,16 @@ class ConversationStore:
             msg["totalS"] = row["total_s"]
         if row["cached"]:
             msg["cached"] = True
+        # New fields — safe access for migrated DBs
+        try:
+            if row["reasoning_json"]:
+                msg["reasoning"] = json.loads(row["reasoning_json"])
+            if row["auto_profile"]:
+                msg["autoProfile"] = row["auto_profile"]
+            if row["skill_used"]:
+                msg["skillUsed"] = row["skill_used"]
+        except (IndexError, KeyError):
+            pass
         return msg
 
     def clear_messages(self, user_id: str, session_id: str = "web-ui"):

@@ -55,6 +55,7 @@ class ChatRequest(BaseModel):
     use_rag: bool = Field(True, description="Enable RAG context retrieval")
     use_tools: bool = Field(True, description="Enable auto-tools")
     use_cache: bool = Field(True, description="Enable response cache")
+    auto_mode: bool = Field(False, description="Auto-select optimal params per message")
 
 class ChatResponse(BaseModel):
     response: str
@@ -67,6 +68,8 @@ class ChatResponse(BaseModel):
     total_s: float = 0.0
     cached: bool = False
     session_id: str = "default"
+    auto_profile: str | None = None
+    skill_used: str | None = None
 
 class ClassifyRequest(BaseModel):
     text: str = Field(..., description="Text to classify")
@@ -133,6 +136,7 @@ response_cache = None
 auto_tools = None
 key_manager = None
 conv_store = None
+auto_mode_engine = None
 stt_engine = None
 tts_engine = None
 ocr_engine = None
@@ -236,6 +240,11 @@ async def lifespan(app: FastAPI):
     # Conversation persistence
     from conversations import ConversationStore
     conv_store = ConversationStore()
+
+    # Auto-mode
+    from auto_mode import AutoMode
+    global auto_mode_engine
+    auto_mode_engine = AutoMode()
 
     # Speech-to-Text
     try:
@@ -643,6 +652,22 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
     old_history = compute_path.history
     compute_path.history = session
 
+    # Auto-mode: classify and override params
+    auto_profile = None
+    gen_temp = req.temperature
+    gen_top_p = req.top_p
+    gen_top_k = req.top_k
+    gen_rep = req.repeat_penalty
+    gen_max = req.max_tokens
+    if req.auto_mode and auto_mode_engine and compute_path:
+        auto_params = auto_mode_engine.classify(req.message, compute_path.llm)
+        auto_profile = auto_params.get("profile")
+        gen_temp = auto_params.get("temperature", gen_temp)
+        gen_top_p = auto_params.get("top_p", gen_top_p)
+        gen_top_k = auto_params.get("top_k", gen_top_k)
+        gen_rep = auto_params.get("repeat_penalty", gen_rep)
+        gen_max = auto_params.get("max_tokens", gen_max)
+
     # Generate (capture output instead of printing)
     prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result, system_prompt=req.system_prompt)
 
@@ -653,13 +678,13 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
 
     stream = compute_path.llm.create_completion(
         prompt,
-        max_tokens=req.max_tokens,
+        max_tokens=gen_max,
         stream=True,
         echo=False,
-        temperature=req.temperature,
-        top_p=req.top_p,
-        top_k=req.top_k,
-        repeat_penalty=req.repeat_penalty,
+        temperature=gen_temp,
+        top_p=gen_top_p,
+        top_k=gen_top_k,
+        repeat_penalty=gen_rep,
     )
 
     for chunk in stream:
@@ -699,6 +724,7 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         total_s=round(total_s, 3),
         cached=False,
         session_id=req.session_id,
+        auto_profile=auto_profile,
     )
 
 
