@@ -300,6 +300,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Global exception handler — return explicit error details instead of generic 500
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    tb = traceback.format_exc()
+    print(f"\n!!! UNHANDLED ERROR: {exc}\n{tb}")
+    return fastapi.responses.JSONResponse(
+        status_code=500,
+        content={
+            "detail": str(exc),
+            "type": type(exc).__name__,
+            "path": str(request.url.path),
+        },
+    )
+
+import fastapi.responses
+
 
 # --- Endpoints ---
 

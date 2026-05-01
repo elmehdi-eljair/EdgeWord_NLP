@@ -94,7 +94,10 @@ export async function chat(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || `API error ${res.status}`);
+    const detail = err.detail || "Unknown error";
+    const errType = err.type || "";
+    const path = err.path || "";
+    throw new Error(`${detail}${errType ? ` (${errType})` : ""}${path ? ` — ${path}` : ""} [HTTP ${res.status}]`);
   }
   return res.json();
 }
