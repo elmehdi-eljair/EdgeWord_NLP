@@ -355,13 +355,226 @@ When the conversation is empty (first load):
 
 ---
 
-## 9. Responsive Behaviour
+## 9. Responsive Design
 
-| Viewport | Behaviour |
+Three breakpoints. Every component adapts. The experience must feel purpose-built for each device — not a desktop UI crammed into a phone.
+
+### Breakpoints
+
+| Name | Range | Tailwind | Design intent |
+|---|---|---|---|
+| **Mobile** | 0–639px | `sm:` | Phone-first. Full-width, stacked, thumb-friendly. |
+| **Tablet** | 640–1023px | `md:` | iPad/landscape. Slightly wider column, side panel available. |
+| **Desktop** | 1024px+ | `lg:` | Full layout with 680px conversation column and side panel. |
+
+---
+
+### 9.1 Top Bar
+
+| Element | Mobile | Tablet | Desktop |
+|---|---|---|---|
+| Height | `h-11` | `h-12` | `h-12` |
+| Brand mark | `w-5 h-5` — always visible | same | same |
+| Title text | Hidden (`hidden sm:block`) | "EdgeWord" visible | "EdgeWord" visible |
+| Health pill | Dot only, no text | Dot + "Online" | Dot + "Online" |
+| Settings icon | 20px, right edge | 16px | 16px |
+| Padding | `px-4` | `px-5` | `px-6` |
+
+---
+
+### 9.2 Conversation Thread
+
+| Element | Mobile | Tablet | Desktop |
+|---|---|---|---|
+| Column width | `w-full px-3` | `max-w-[600px] mx-auto px-4` | `max-w-[680px] mx-auto px-6` |
+| User message margin | `ml-8` (subtle indent) | `ml-12` | `ml-16` |
+| AI response margin | `mr-4` | `mr-8` | `mr-16` |
+| Message padding | `px-3 py-2.5` | `px-3.5 py-3` | `px-4 py-3` |
+| Font size (body) | `text-[14px]` (larger for readability) | `text-[13px]` | `text-[13px]` |
+| Metadata font | `text-[10px]` | `text-[11px]` | `text-[11px]` |
+| Actions visibility | Always visible (no hover on touch) | Always visible | Visible on hover |
+| Action icon size | 18px (larger touch targets) | 16px | 14px |
+| Action touch area | `min-w-[44px] min-h-[44px]` | `min-w-[36px]` | natural |
+| Sentiment pill | Inline, `text-[10px]` | `text-[11px]` | `text-[11px]` |
+| RAG chips | Stack vertically if multiple | Inline row | Inline row |
+| Tool result | Full width, smaller padding | Same as desktop | `px-3 py-2` |
+
+**Key mobile adaptations:**
+- Message actions are always visible on mobile (no hover state on touch devices)
+- Touch targets are minimum 44x44px per Apple HIG
+- Body text is 14px on mobile for readability (not 13px)
+- Messages use less horizontal margin to maximise reading width
+
+---
+
+### 9.3 Prompt Bar
+
+This is the most critical responsive component. It must feel native on every device.
+
+#### Mobile (< 640px)
+
+```
+┌──────────────────────────────────────┐
+│ ┌──────────────────────────────────┐ │
+│ │  Type a message...         [send]│ │
+│ ├──────────────────────────────────┤ │
+│ │  [mic]  [upload]  [image]        │ │
+│ └──────────────────────────────────┘ │
+│  Llama-3.2-1B · 14.9 t/s · 3 turns  │
+└──────────────────────────────────────┘
+```
+
+- **Layout:** Icons move below the textarea into their own row
+- **Container:** `rounded-xl` (not `rounded-2xl`), no horizontal margin — flush to screen edges with `mx-3`
+- **Textarea:** Full width, `text-[15px]` (iOS prevents zoom below 16px — use 15px with viewport meta)
+- **Send button:** `w-9 h-9` — larger touch target
+- **Icon row:** `flex gap-4 px-3 py-2 border-t border-line` — icons at 20px, `min-h-[44px]` touch targets
+- **Bottom safe area:** `pb-[env(safe-area-inset-bottom)]` for iPhone notch/gesture bar
+
+#### Tablet (640–1023px)
+
+```
+┌──────────────────────────────────────────────┐
+│ ┌────────────────────────────────────────────┐│
+│ │ [mic][upload][image] │ Type a message [send]││
+│ └────────────────────────────────────────────┘│
+│  Llama-3.2-1B · 14.9 t/s                     │
+└──────────────────────────────────────────────┘
+```
+
+- **Layout:** Same as desktop but wider column (`max-w-[600px]`)
+- **Container:** `rounded-2xl mx-4`
+- **Icons:** Inline left, 18px
+
+#### Desktop (1024px+)
+
+- Full layout as specified in Section 5
+- `max-w-[680px] mx-auto`
+- `rounded-2xl`
+
+---
+
+### 9.4 Settings Panel
+
+| Element | Mobile | Tablet | Desktop |
+|---|---|---|---|
+| **Type** | Full-screen modal | Side panel `w-[320px]` | Side panel `w-[360px]` |
+| **Entry** | Slides up from bottom | Slides from right | Slides from right |
+| **Close** | Swipe down + close button at top | Close button | Close button |
+| **Backdrop** | `bg-black/40` | `bg-black/20 backdrop-blur-sm` | `bg-black/20 backdrop-blur-sm` |
+| **Scroll** | Full page scroll | Internal scroll | Internal scroll |
+| **Title size** | `text-[16px]` | `text-[14px]` | `text-[14px]` |
+| **Section labels** | `text-[12px]` | `text-[11px]` | `text-[11px]` |
+| **Form inputs** | `py-3 text-[15px]` (larger) | `py-2.5 text-[13px]` | `py-2.5 text-[13px]` |
+| **Buttons** | Full width, `py-3` | Auto width, `py-2` | Auto width, `py-2` |
+
+**Mobile settings modal:**
+```
+┌──────────────────────────────────────┐
+│  ━━━  (drag handle)                  │ ← 4px wide, 40px, centred, bg-line
+├──────────────────────────────────────┤
+│  SETTINGS                    [close] │
+│                                      │
+│  MODEL                               │
+│  Llama-3.2-1B-Instruct              │
+│  ...                                 │
+│  (scrollable content)                │
+│                                      │
+└──────────────────────────────────────┘
+```
+
+- **Drag handle:** `w-10 h-1 bg-line rounded-full mx-auto mt-2 mb-4` — hints at swipe-to-dismiss
+- **Container:** `fixed inset-x-0 bottom-0 rounded-t-2xl bg-white max-h-[85vh] overflow-y-auto`
+
+---
+
+### 9.5 Empty State
+
+| Element | Mobile | Tablet/Desktop |
+|---|---|---|
+| Brand mark | `w-8 h-8` | `w-7 h-7` |
+| Title | `text-[18px]` | `text-[18px]` |
+| Subtitle | `text-[14px]` | `text-[13px]` |
+| Suggestion chips | Stack vertically, full width | Inline row, auto width |
+| Chip padding | `px-4 py-3.5` (larger touch) | `px-4 py-3` |
+
+---
+
+### 9.6 Thinking Indicator & Streaming
+
+| Element | Mobile | Tablet/Desktop |
+|---|---|---|
+| Dots | Same animation, `w-2 h-2` | `w-1.5 h-1.5` |
+| Streaming text | `text-[14px]` | `text-[13px]` |
+| Live counter | `text-[10px]` | `text-[11px]` |
+
+---
+
+### 9.7 Audio Player (TTS)
+
+| Element | Mobile | Tablet/Desktop |
+|---|---|---|
+| Play button | `w-10 h-10` (44px touch) | `w-7 h-7` |
+| Progress bar height | `h-[4px]` (easier to tap) | `h-[3px]` |
+| Time text | `text-[12px]` | `text-[11px]` |
+| Container | Full message width | Inline within message |
+
+---
+
+### 9.8 Attachment Previews
+
+| Element | Mobile | Tablet/Desktop |
+|---|---|---|
+| Image thumbnail | `w-16 h-16` | `w-20 h-20` |
+| File chip | Full width, stacked | Inline |
+| Remove button | `w-6 h-6` circle, top-right | `w-5 h-5` |
+
+---
+
+### 9.9 Touch Optimisations
+
+- **Swipe gestures:** Swipe left on a message to reveal actions (re-run, copy, speak)
+- **Long press:** On a message to show action menu (alternative to swipe)
+- **Pull to refresh:** Not needed (single thread), but pull-down at top could show system status
+- **Haptic feedback:** Trigger `navigator.vibrate(10)` on button taps if supported
+- **Pinch to zoom:** Disabled on conversation (`user-scalable=no` or `touch-action: pan-y`) — text sizes are already readable
+- **Viewport meta:** `<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">`
+- **Safe areas:** `padding-bottom: env(safe-area-inset-bottom)` on prompt bar for iPhone notch
+
+---
+
+### 9.10 Orientation
+
+| Orientation | Behaviour |
 |---|---|
-| Desktop (>1024px) | Full layout, settings panel slides from right |
-| Tablet (768-1024px) | Conversation column fills width with `px-4` |
-| Mobile (<768px) | Full-width, prompt bar icons collapse into `[+]` menu, settings opens as full-screen modal |
+| Portrait (phone) | Default mobile layout |
+| Landscape (phone) | Prompt bar icons stay below textarea. Conversation column uses `max-w-[500px]`. Keyboard pushes content up correctly. |
+| Portrait (tablet) | Tablet layout |
+| Landscape (tablet) | Desktop layout activates (`lg:` breakpoint usually hit) |
+
+---
+
+### 9.11 CSS Architecture for Responsiveness
+
+Use Tailwind's responsive prefixes consistently:
+
+```tsx
+// Example: Message container
+className={`
+  px-3 py-2.5                    // mobile
+  sm:px-3.5 sm:py-3              // tablet  
+  lg:px-4 lg:py-3                // desktop
+  
+  ml-8                           // mobile user indent
+  sm:ml-12                       // tablet
+  lg:ml-16                       // desktop
+  
+  text-[14px]                    // mobile (readable)
+  sm:text-[13px]                 // tablet/desktop (compact)
+`}
+```
+
+**Container queries (future):** For components rendered inside panels of varying width, use `@container` queries when Tailwind 4 support matures.
 
 ---
 

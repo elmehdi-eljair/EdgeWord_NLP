@@ -14,6 +14,9 @@
 - Configure `tailwind.config.ts` with all Strand design tokens (colors, fonts, spacing)
 - Install Inter + JetBrains Mono via `next/font`
 - Set up base CSS with `bg` page background, default text `ink`
+- Set viewport meta: `width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover`
+- Define responsive breakpoints: mobile (<640), tablet (640-1023), desktop (1024+)
+- Add safe-area CSS variables for iPhone notch: `env(safe-area-inset-bottom)`
 
 ### 0.2 API client layer
 - Create `src/lib/api.ts` — typed fetch wrapper for all EdgeWord endpoints
@@ -53,7 +56,14 @@
 - Update thinking indicator in real-time as tokens arrive
 - Transition from thinking to final response on completion
 
-**Deliverable:** Working conversation thread with static test messages, proper Strand styling.
+### 1.4 Responsive message layout
+- Mobile: `ml-8` user indent, `mr-4` AI indent, `text-[14px]` body, actions always visible
+- Tablet: `ml-12` / `mr-8`, `text-[13px]`
+- Desktop: `ml-16` / `mr-16`, actions on hover
+- Touch: swipe-left on messages reveals action bar, long-press shows action menu
+- All action icons minimum 44x44px touch target on mobile
+
+**Deliverable:** Working conversation thread with static test messages, responsive across all devices.
 
 ---
 
@@ -87,7 +97,14 @@
 - Image: thumbnail 64x64 with remove button
 - File: icon + filename + size with remove button
 
-**Deliverable:** Fully functional prompt bar with all icons, auto-grow, keyboard shortcuts.
+### 2.6 Responsive prompt bar
+- Mobile: icons move below textarea in their own row, `text-[15px]` input (prevents iOS zoom), flush to edges with `mx-3`, safe-area bottom padding
+- Tablet: icons inline left, `max-w-[600px]` column
+- Desktop: full layout per spec, `max-w-[680px]`
+- Send button: `w-9 h-9` on mobile, `w-8 h-8` on desktop
+- Keyboard handling: prompt bar pushes up when virtual keyboard opens (mobile)
+
+**Deliverable:** Fully functional prompt bar, feels native on phone, tablet, and desktop.
 
 ---
 
@@ -147,7 +164,12 @@
 ### 4.6 System info
 - CPU, RAM, uptime from `/v1/health`
 
-**Deliverable:** Complete settings panel with all configuration options.
+### 4.7 Responsive settings
+- Mobile: full-screen bottom sheet with drag handle, slides up, swipe-down to dismiss, `max-h-[85vh]`, form inputs `py-3 text-[15px]`, buttons full-width
+- Tablet: side panel `w-[320px]` from right
+- Desktop: side panel `w-[360px]` from right
+
+**Deliverable:** Complete settings panel, native feel on every device.
 
 ---
 
@@ -177,12 +199,23 @@
 - `Cmd+Shift+Backspace` — clear conversation
 - `Escape` — close settings / stop generation
 
-### 5.5 Responsive
-- Mobile prompt bar: icons collapse into `[+]` overflow menu
-- Mobile settings: full-screen modal instead of side panel
-- Touch targets: minimum 44px on mobile
+### 5.5 Responsive polish
+- Test all three breakpoints: 375px (iPhone SE), 390px (iPhone 15), 768px (iPad), 1024px (iPad landscape), 1440px (desktop)
+- Verify safe-area padding on iPhone notch/gesture bar
+- Verify virtual keyboard behaviour: prompt bar pushes up, conversation scrolls
+- Test landscape orientation on phone and tablet
+- Touch targets: audit every interactive element for 44px minimum on mobile
+- Swipe gestures: test swipe-left on messages, swipe-down on settings
+- Haptic feedback on supported devices
 
-**Deliverable:** Polished, production-ready UI.
+### 5.6 PWA / Mobile install
+- Add `manifest.json` for Add to Home Screen
+- Set `theme-color` to `#FBFAFE` (bg token)
+- App icon: brand gradient square at 192px and 512px
+- Standalone display mode — no browser chrome
+- Splash screen: brand mark centred on `bg` background
+
+**Deliverable:** Polished, production-ready UI that feels native on every device.
 
 ---
 
