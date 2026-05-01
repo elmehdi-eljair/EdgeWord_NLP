@@ -1,11 +1,12 @@
 """
-EdgeWord NLP — Interactive CLI with Conversation Memory
+EdgeWord NLP — Interactive CLI
 Type anything — gets sentiment classification + AI response.
-The model remembers your conversation via LangChain memory.
+Features: conversation memory (LangChain), RAG (FAISS + ONNX), response cache (SQLite), auto-tools.
 
 Usage:
     .venv/bin/python3 cli.py
-    .venv/bin/python3 cli.py --model ./models/qwen2.5-0.5b-instruct-q4_k_m.gguf
+    .venv/bin/python3 cli.py --docs ./docs
+    .venv/bin/python3 cli.py --no-cache
     .venv/bin/python3 cli.py --fast-only
 """
 
@@ -33,6 +34,7 @@ YELLOW = "\033[33m"
 CYAN = "\033[36m"
 RED = "\033[31m"
 MAGENTA = "\033[35m"
+BLUE = "\033[34m"
 RESET = "\033[0m"
 
 
@@ -93,7 +95,7 @@ class FastPath:
 class ComputePath:
     """llama.cpp text generator with LangChain conversation memory."""
 
-    def __init__(self, model_path: str, n_threads: int = 4, memory_k: int = 10):
+    def __init__(self, model_path: str, n_threads: int = 4, memory_k: int = 50):
         print(f"{DIM}Loading Compute-Path model...{RESET}", end=" ", flush=True)
         t0 = time.perf_counter()
         from llama_cpp import Llama
@@ -113,20 +115,20 @@ class ComputePath:
         if "llama" in model_name:
             self.template = "llama3"
         else:
-            self.template = "chatml"  # qwen, mistral, etc.
+            self.template = "chatml"
 
-        # LangChain conversation memory — keeps last K exchanges
+        # LangChain conversation memory
         from langchain_core.messages import HumanMessage, AIMessage
         self._HumanMessage = HumanMessage
         self._AIMessage = AIMessage
         self.memory_k = memory_k
-        self.history: list = []  # list of (HumanMessage, AIMessage)
+        self.history: list = []
 
         elapsed = time.perf_counter() - t0
         print(f"{GREEN}ready{RESET} {DIM}({elapsed:.1f}s, {n_threads} threads, memory={memory_k} turns){RESET}")
 
-    def _build_prompt(self, user_message: str) -> str:
-        """Build a prompt that includes conversation history from LangChain memory."""
+    def _build_prompt(self, user_message: str, rag_context: str = "", tool_result: str = "") -> str:
+        """Build prompt with conversation history, RAG context, and tool results."""
         system_text = (
             "You are EdgeWord Assistant, a helpful AI running locally on CPU with no cloud dependencies. "
             "Be concise and clear. "
@@ -134,13 +136,24 @@ class ComputePath:
             "use the history to answer accurately."
         )
 
+        if rag_context:
+            system_text += (
+                "\n\nUse the following retrieved documents to help answer the user's question. "
+                "If the documents are relevant, base your answer on them. "
+                "If not relevant, answer from your own knowledge.\n\n"
+                f"--- Retrieved Documents ---\n{rag_context}\n--- End Documents ---"
+            )
+
+        # Prepend tool results to the user message if any
+        if tool_result:
+            user_message = f"{tool_result}\n\nUser question: {user_message}"
+
         if self.template == "llama3":
             return self._build_llama3_prompt(system_text, user_message)
         else:
             return self._build_chatml_prompt(system_text, user_message)
 
     def _build_chatml_prompt(self, system_text: str, user_message: str) -> str:
-        """ChatML format (Qwen, Mistral, etc.)"""
         prompt = f"<|im_start|>system\n{system_text}<|im_end|>\n"
         for human_msg, ai_msg in self.history[-self.memory_k:]:
             prompt += f"<|im_start|>user\n{human_msg.content}<|im_end|>\n"
@@ -150,10 +163,7 @@ class ComputePath:
         return prompt
 
     def _build_llama3_prompt(self, system_text: str, user_message: str) -> str:
-        """Llama 3 format."""
-        prompt = (
-            f"<|start_header_id|>system<|end_header_id|>\n\n{system_text}<|eot_id|>"
-        )
+        prompt = f"<|start_header_id|>system<|end_header_id|>\n\n{system_text}<|eot_id|>"
         for human_msg, ai_msg in self.history[-self.memory_k:]:
             prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{human_msg.content}<|eot_id|>"
             prompt += f"<|start_header_id|>assistant<|end_header_id|>\n\n{ai_msg.content}<|eot_id|>"
@@ -161,8 +171,10 @@ class ComputePath:
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
         return prompt
 
-    def chat(self, message: str, max_tokens: int = 256, temperature: float = 0.7) -> None:
-        prompt = self._build_prompt(message)
+    def chat(self, message: str, max_tokens: int = 256, temperature: float = 0.7,
+             rag_context: str = "", tool_result: str = "") -> str:
+        """Generate a response. Returns the response text."""
+        prompt = self._build_prompt(message, rag_context=rag_context, tool_result=tool_result)
 
         sys.stdout.write(f"  {DIM}[chat]{RESET} {CYAN}")
         sys.stdout.flush()
@@ -198,12 +210,12 @@ class ComputePath:
         sys.stdout.write(RESET)
         print(f"\n\n  {DIM}{token_count} tokens · {tps:.1f} t/s · TTFT {ttft:.3f}s{RESET}\n")
 
-        # Save this exchange to LangChain memory
         response_text = "".join(response_parts).strip()
         self.history.append((
             self._HumanMessage(content=message),
             self._AIMessage(content=response_text),
         ))
+        return response_text
 
     def clear_memory(self) -> None:
         self.history.clear()
@@ -219,25 +231,37 @@ class ComputePath:
             print()
 
 
-def print_banner(has_compute: bool) -> None:
+def print_banner(has_compute: bool, rag_count: int, cache_on: bool, tools_on: bool) -> None:
     print(f"""
 {BOLD}╔══════════════════════════════════════════════════╗
 ║          EdgeWord NLP — Interactive CLI           ║
 ╚══════════════════════════════════════════════════╝{RESET}
 """)
-    print(f"  Type anything. Every input gets both:")
-    print(f"    {GREEN}Sentiment{RESET}   → classification result     {DIM}(Fast-Path, ONNX){RESET}")
+    print(f"  Type anything. Every input gets:")
+    print(f"    {GREEN}Sentiment{RESET}   → classification            {DIM}(Fast-Path, ONNX){RESET}")
     if has_compute:
         print(f"    {CYAN}Response{RESET}    → AI-generated answer      {DIM}(Compute-Path, llama.cpp){RESET}")
-        print(f"    {MAGENTA}Memory{RESET}      → conversation is remembered {DIM}(LangChain){RESET}")
+        print(f"    {MAGENTA}Memory{RESET}      → conversation remembered  {DIM}(LangChain){RESET}")
+    if rag_count > 0:
+        print(f"    {BLUE}RAG{RESET}         → {rag_count} chunks indexed       {DIM}(FAISS + ONNX embeddings){RESET}")
+    if cache_on:
+        print(f"    {YELLOW}Cache{RESET}       → instant repeat answers   {DIM}(SQLite){RESET}")
+    if tools_on:
+        print(f"    {GREEN}Tools{RESET}       → calc, datetime, sysinfo  {DIM}(auto-detect){RESET}")
     print()
     print(f"  {BOLD}Commands:{RESET}")
-    print(f"    {YELLOW}bench{RESET}      — run latency benchmark")
+    print(f"    {YELLOW}bench{RESET}        — run latency benchmark")
     if has_compute:
-        print(f"    {YELLOW}memory{RESET}     — show conversation history")
-        print(f"    {YELLOW}clear{RESET}      — clear conversation memory")
+        print(f"    {YELLOW}memory{RESET}       — show conversation history")
+        print(f"    {YELLOW}clear{RESET}        — clear conversation memory")
+    if rag_count > 0:
+        print(f"    {YELLOW}rag{RESET}          — show indexed documents")
+    if cache_on:
+        print(f"    {YELLOW}cache{RESET}        — show cache stats")
+        print(f"    {YELLOW}cache clear{RESET}  — clear response cache")
+    if has_compute:
         print(f"    {YELLOW}/tokens N{RESET}  /temp N  /threads N  — tune generation")
-    print(f"    {YELLOW}quit{RESET}       — exit")
+    print(f"    {YELLOW}quit{RESET}         — exit")
     print()
 
 
@@ -299,7 +323,11 @@ def main() -> None:
     parser.add_argument("--model", type=str, help="Path to GGUF model for generation")
     parser.add_argument("--fast-only", action="store_true", help="Classification only, skip generation")
     parser.add_argument("--threads", type=int, default=4, help="Thread count for generation (default: 4)")
-    parser.add_argument("--memory", type=int, default=50, help="Number of conversation turns to remember (default: 50)")
+    parser.add_argument("--memory", type=int, default=50, help="Conversation turns to remember (default: 50)")
+    parser.add_argument("--docs", type=str, default="./docs", help="Directory for RAG documents (default: ./docs)")
+    parser.add_argument("--no-cache", action="store_true", help="Disable response cache")
+    parser.add_argument("--no-tools", action="store_true", help="Disable auto-tools")
+    parser.add_argument("--no-rag", action="store_true", help="Disable RAG")
     args = parser.parse_args()
 
     # --- Load backends ---
@@ -323,10 +351,36 @@ def main() -> None:
             print(f"{DIM}Use --model path/to/model.gguf or place a .gguf in ./models/{RESET}\n")
 
     has_compute = compute is not None
+
+    # --- Load RAG ---
+    rag = None
+    rag_count = 0
+    if not args.no_rag:
+        from pathlib import Path
+        docs_dir = Path(args.docs)
+        if docs_dir.exists() and any(docs_dir.rglob("*")):
+            from rag import RAGEngine
+            rag = RAGEngine()
+            rag_count = rag.load_directory(args.docs)
+            if rag_count == 0:
+                rag = None
+
+    # --- Load Cache ---
+    cache = None
+    if not args.no_cache:
+        from cache import ResponseCache
+        cache = ResponseCache(enabled=True)
+
+    # --- Load Tools ---
+    tools = None
+    if not args.no_tools:
+        from tools import AutoTools
+        tools = AutoTools(base_dir=str(Path(__file__).parent))
+
     max_tokens = 256
     temperature = 0.7
 
-    print_banner(has_compute)
+    print_banner(has_compute, rag_count, cache is not None, tools is not None)
 
     while True:
         try:
@@ -345,7 +399,7 @@ def main() -> None:
             print(f"{DIM}Goodbye.{RESET}")
             break
         if low in ("help", "h", "?"):
-            print_banner(has_compute)
+            print_banner(has_compute, rag_count, cache is not None, tools is not None)
             continue
         if low == "bench":
             run_bench(fast, compute)
@@ -356,6 +410,22 @@ def main() -> None:
         if low == "clear" and has_compute:
             compute.clear_memory()
             print(f"  {DIM}Conversation memory cleared.{RESET}\n")
+            continue
+        if low == "rag" and rag:
+            print(f"\n  {BOLD}RAG Index:{RESET} {rag.doc_count} chunks indexed")
+            sources = set(c["source"] for c in rag.chunks)
+            for s in sorted(sources):
+                count = sum(1 for c in rag.chunks if c["source"] == s)
+                print(f"    {DIM}{s}{RESET} ({count} chunks)")
+            print()
+            continue
+        if low == "cache" and cache:
+            stats = cache.stats()
+            print(f"  {DIM}Cache: {stats['entries']} entries, {stats['total_hits']} hits{RESET}\n")
+            continue
+        if low == "cache clear" and cache:
+            removed = cache.clear()
+            print(f"  {DIM}Cleared {removed} cached responses.{RESET}\n")
             continue
         if low.startswith("/tokens "):
             try:
@@ -379,19 +449,65 @@ def main() -> None:
                 n = int(raw.split()[1])
                 print(f"  {DIM}Reloading model with {n} threads...{RESET}")
                 mp = compute.model_path
-                old_memory = compute.memory
+                old_history = compute.history
                 del compute
                 compute = ComputePath(mp, n_threads=n, memory_k=args.memory)
-                compute.memory = old_memory  # preserve conversation across reload
+                compute.history = old_history
                 has_compute = True
             except (ValueError, IndexError):
                 print(f"  {RED}Usage: /threads N{RESET}")
             continue
 
-        # --- Always classify + always chat ---
+        # --- Classify ---
         fast.classify(raw)
-        if has_compute:
-            compute.chat(raw, max_tokens=max_tokens, temperature=temperature)
+
+        if not has_compute:
+            continue
+
+        # --- Auto-tools (inject results into context, zero LLM overhead) ---
+        tool_result = ""
+        if tools:
+            result = tools.run(raw)
+            if result:
+                tool_result = result
+                print(f"  {DIM}[tool]{RESET} {GREEN}{result}{RESET}\n")
+
+        # --- RAG retrieval ---
+        rag_context = ""
+        if rag:
+            results = rag.retrieve(raw, top_k=3)
+            if results and results[0]["score"] > 0.3:  # relevance threshold
+                rag_context = rag.format_context(results)
+                top_source = results[0]["source"]
+                top_score = results[0]["score"]
+                print(f"  {DIM}[rag]{RESET} {BLUE}Found {len(results)} relevant chunks (top: {top_source}, score: {top_score:.2f}){RESET}\n")
+
+        # --- Cache check ---
+        if cache:
+            cached_response = cache.get(raw)
+            if cached_response:
+                print(f"  {DIM}[cache hit]{RESET} {CYAN}{cached_response}{RESET}")
+                print(f"\n  {DIM}(cached — instant){RESET}\n")
+                # Still save to memory for conversation continuity
+                from langchain_core.messages import HumanMessage, AIMessage
+                compute.history.append((
+                    HumanMessage(content=raw),
+                    AIMessage(content=cached_response),
+                ))
+                continue
+
+        # --- Generate ---
+        response = compute.chat(
+            raw,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            rag_context=rag_context,
+            tool_result=tool_result,
+        )
+
+        # --- Cache store ---
+        if cache and response:
+            cache.put(raw, response)
 
 
 if __name__ == "__main__":

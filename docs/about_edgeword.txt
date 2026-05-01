@@ -1,0 +1,15 @@
+EdgeWord NLP is a CPU-native NLP pipeline built by El Mehdi El Jair.
+It runs two inference branches: a Fast-Path for language understanding using ONNX Runtime,
+and a Compute-Path for language generation using llama.cpp with GGUF quantized models.
+
+The project was started in May 2026 as part of a research initiative to demonstrate
+that modern NLP workloads can run entirely on consumer CPUs without GPU or cloud dependencies.
+
+Key technical decisions:
+- No PyTorch at runtime — total pip footprint is ~150 MB vs ~700 MB with torch
+- GGUF Q4_K_M quantization reduces model memory by 4x with minimal quality loss
+- AVX2 vector instructions are used for both ONNX and llama.cpp inference
+- The pipeline targets < 50ms latency for classification and 10-25 tokens/sec for generation
+
+The system is designed for edge deployment, privacy-preserving inference, and offline operation.
+It can run on any x86_64 or ARM64 machine with at least 8 GB of RAM.

@@ -5,6 +5,8 @@ __pycache__/
 *.whl
 *.gguf
 models/
+.venv/
+.cache/
 .claude/
 *.egg-info/
 .env
