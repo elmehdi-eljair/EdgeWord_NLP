@@ -147,10 +147,12 @@ function Settings({open,onClose,health,onLogout}:{open:boolean;onClose:()=>void;
             {/* ── Profile ── */}
             {tab==="profile"&&<div>
               <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>Profile</h3>
-              {[{k:"Display name",f:"display_name"},{k:"Email",f:"email"}].map(({k,f})=>(
+              {[{k:"Display name",f:"display_name",ph:"Your name"},{k:"Email",f:"email",ph:"you@example.com"},{k:"Username",f:"username",ph:"",ro:true}].map(({k,f,ph,ro})=>(
                 <div key={k} style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:24,padding:"16px 0",borderTop:"1px solid var(--md-outline-variant)",alignItems:"center"}}>
                   <span style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface-variant)"}}>{k}</span>
-                  <input value={profile[f]||""} placeholder={f==="email"?"you@example.com":""} onChange={e=>setProfile((p:any)=>({...p,[f]:e.target.value}))} onBlur={e=>saveP(f,e.target.value)} style={inputS}/>
+                  <input key={`${f}-${profile[f]||""}`} defaultValue={profile[f]||""} placeholder={ph} readOnly={!!ro}
+                    onBlur={e=>{if(!ro)saveP(f,e.target.value);}}
+                    style={{...inputS,opacity:ro?.6:1,cursor:ro?"default":"text"}}/>
                 </div>
               ))}
               <div style={{marginTop:24}}><button onClick={()=>{if(confirm("Sign out?")){{api.logout();onLogout();}}}} style={{padding:"10px 20px",background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-error)",transition:"background .2s var(--ease)"}}
@@ -195,17 +197,71 @@ function Settings({open,onClose,health,onLogout}:{open:boolean;onClose:()=>void;
 
             {/* ── Knowledge ── */}
             {tab==="knowledge"&&<div>
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>Knowledge · {docs.length} documents</h3>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)"}}>Knowledge · {docs.length} documents</h3>
+                {/* Fullscreen knowledge management button */}
+                <button onClick={()=>{setTab("knowledge-full");}} title="Manage knowledge" style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+                </button>
+              </div>
               <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
                 {docs.map((d:any)=><div key={d.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",background:"var(--md-surface-container-low)",borderRadius:12}}>
                   <span style={{fontFamily:"var(--google-sans)",fontSize:13.5,fontWeight:500,color:"var(--md-on-surface)"}}>{d.name}</span>
                   <span style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--md-on-surface-variant)"}}>{d.chunks} chunks</span>
                 </div>)}
+                {docs.length===0&&<p style={{fontFamily:"var(--sans)",fontSize:13,color:"var(--md-on-surface-variant)",padding:16,textAlign:"center"}}>No documents yet. Upload files to build your knowledge base.</p>}
               </div>
               <button onClick={()=>kFileRef.current?.click()} style={{padding:"10px 20px",background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-primary)",transition:"background .2s var(--ease)"}}
                 onMouseEnter={e=>e.currentTarget.style.background="var(--md-primary-container)"}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>Upload document</button>
-              <input ref={kFileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml" onChange={async e=>{if(!e.target.files)return;for(const f of Array.from(e.target.files))await api.uploadKnowledge(f);api.listKnowledge().then(d=>setDocs(d.documents||[]));e.target.value="";}}/>
+              <input ref={kFileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,.pdf" multiple onChange={async e=>{if(!e.target.files)return;for(const f of Array.from(e.target.files))await api.uploadKnowledge(f);api.listKnowledge().then(d=>setDocs(d.documents||[]));e.target.value="";}}/>
+            </div>}
+
+            {/* ── Knowledge Fullscreen ── */}
+            {tab==="knowledge-full"&&<div>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+                <button onClick={()=>setTab("knowledge")} style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+                </button>
+                <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:18,color:"var(--md-on-surface)"}}>Knowledge Management</h3>
+              </div>
+              <p style={{fontFamily:"var(--sans)",fontSize:14,color:"var(--md-on-surface-variant)",marginBottom:20,lineHeight:1.6}}>
+                Upload documents to build your knowledge base. EdgeWord will index them for RAG retrieval — your AI responses will be grounded in these documents.
+              </p>
+
+              {/* Upload area */}
+              <div style={{padding:32,border:"2px dashed var(--md-outline-variant)",borderRadius:16,textAlign:"center",marginBottom:24,cursor:"pointer",transition:"all .2s var(--ease)"}}
+                onClick={()=>kFileRef.current?.click()}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--md-primary)";e.currentTarget.style.background="var(--md-primary-container)";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--md-outline-variant)";e.currentTarget.style.background="transparent";}}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="1.5" strokeLinecap="round" style={{marginBottom:12}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)",marginBottom:4}}>Drop files here or click to upload</div>
+                <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)"}}>Supports .txt, .md, .py, .json, .csv, .yaml, .pdf</div>
+              </div>
+
+              {/* Document list with actions */}
+              <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:12}}>Indexed Documents · {docs.reduce((s:number,d:any)=>s+d.chunks,0)} total chunks</h4>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {docs.map((d:any)=><div key={d.name} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:"var(--md-surface-container-low)",borderRadius:12,transition:"background .2s var(--ease)"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="var(--md-surface-container-low)"}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>{d.name}</div>
+                    <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)"}}>{d.chunks} chunks indexed</div>
+                  </div>
+                  <button onClick={async()=>{if(confirm(`Delete ${d.name}?`)){await api.deleteKnowledge(d.name);api.listKnowledge().then(r=>setDocs(r.documents||[]));}}} title="Delete"
+                    style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
+                    onMouseEnter={e=>{e.currentTarget.style.background="var(--md-error-container)";e.currentTarget.style.color="var(--md-error)";}}
+                    onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color="var(--md-on-surface-variant)";}}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                  </button>
+                </div>)}
+              </div>
             </div>}
 
             {/* ── Model ── */}
@@ -223,27 +279,56 @@ function Settings({open,onClose,health,onLogout}:{open:boolean;onClose:()=>void;
 
             {/* ── API Keys ── */}
             {tab==="keys"&&<div>
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>API Keys</h3>
+              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>API Keys · {keys.filter((k:any)=>k.is_active).length} active</h3>
               <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-                {keys.map((k:any)=><div key={k.id} style={{padding:"14px 16px",background:"var(--md-surface-container-low)",borderRadius:12,display:"flex",alignItems:"center",gap:12}}>
-                  <span style={{width:10,height:10,borderRadius:"50%",background:k.is_active?"var(--md-success)":"var(--md-outline)"}}/>
-                  <span style={{flex:1,fontFamily:"var(--google-sans)",fontSize:13.5,fontWeight:500,color:"var(--md-on-surface)"}}>{k.name}</span>
-                  <span style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--md-on-surface-variant)"}}>{k.key_prefix}</span>
-                  {k.is_active&&<button onClick={async()=>{await api.revokeApiKey(k.key_prefix);api.listApiKeys().then(r=>setKeys(r.keys||[]));}} style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-error)",background:"transparent",border:0,cursor:"pointer",padding:"8px 14px",borderRadius:999,transition:"background .2s var(--ease)"}}
-                    onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
-                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>Revoke</button>}
+                {keys.map((k:any)=><div key={k.id} style={{padding:"16px",background:"var(--md-surface-container-low)",borderRadius:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                    <span style={{width:10,height:10,borderRadius:"50%",background:k.is_active?"var(--md-success)":"var(--md-outline)",flexShrink:0}}/>
+                    <span style={{flex:1,fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>{k.name}</span>
+                    <span style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:k.is_active?"var(--md-success)":"var(--md-on-surface-variant)"}}>{k.is_active?"ACTIVE":"REVOKED"}</span>
+                  </div>
+                  <div style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--md-on-surface-variant)",marginBottom:6}}>{k.key_prefix}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:8,fontFamily:"var(--google-sans)",fontSize:11,color:"var(--md-on-surface-variant)",marginBottom:k.is_active?10:0}}>
+                    <span>{k.total_requests} requests</span>
+                    <span style={{color:"var(--md-outline)"}}>·</span>
+                    <span>{k.total_tokens} tokens</span>
+                    <span style={{color:"var(--md-outline)"}}>·</span>
+                    <span>{k.created_at?new Date(k.created_at*1000).toLocaleDateString([],{day:"numeric",month:"short",year:"numeric"})+" "+new Date(k.created_at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"—"}</span>
+                  </div>
+                  {k.is_active&&<div style={{display:"flex",gap:6}}>
+                    <button onClick={async()=>{await api.revokeApiKey(k.key_prefix);api.listApiKeys().then(r=>setKeys(r.keys||[]));}} style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-error)",background:"transparent",border:0,cursor:"pointer",padding:"6px 12px",borderRadius:999,transition:"background .2s var(--ease)"}}
+                      onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>Revoke</button>
+                  </div>}
                 </div>)}
               </div>
               <div style={{display:"flex",gap:8}}>
-                <input value={newKeyName} onChange={e=>setNewKeyName(e.target.value)} placeholder="Key name" style={{...inputS,flex:1}}/>
+                <input value={newKeyName} onChange={e=>setNewKeyName(e.target.value)} placeholder="Key name" style={{...inputS,flex:1}}
+                  onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();if(!newKeyName.trim())return;api.createApiKey(newKeyName.trim()).then(r=>{setCreatedKey(r.key);setNewKeyName("");api.listApiKeys().then(d=>setKeys(d.keys||[]));});}}}/>
                 <button onClick={async()=>{if(!newKeyName.trim())return;const r=await api.createApiKey(newKeyName.trim());setCreatedKey(r.key);setNewKeyName("");api.listApiKeys().then(d=>setKeys(d.keys||[]));}} style={{padding:"10px 20px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,whiteSpace:"nowrap"}}>Create</button>
               </div>
-              {createdKey&&<div style={{marginTop:12,padding:"14px 16px",background:"var(--md-primary-container)",borderRadius:12,fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-primary-container)",wordBreak:"break-all"}}>
-                <strong>New key:</strong> {createdKey}
-                <div style={{marginTop:8,display:"flex",gap:8}}>
-                  <button onClick={()=>navigator.clipboard.writeText(createdKey)} style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-primary)",background:"transparent",border:0,cursor:"pointer"}}>Copy</button>
-                  <button onClick={()=>{const b=new Blob([JSON.stringify({key:createdKey,created:new Date().toISOString()},null,2)],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="edgeword-key.json";a.click();URL.revokeObjectURL(u);}} style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-primary)",background:"transparent",border:0,cursor:"pointer"}}>Download JSON</button>
+              {createdKey&&<div style={{marginTop:12,padding:"16px",background:"var(--md-primary-container)",borderRadius:16}}>
+                <div style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--md-on-primary-container)",wordBreak:"break-all",marginBottom:10,lineHeight:1.5}}>
+                  <strong>New key:</strong> {createdKey}
                 </div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  {/* Copy — icon + label on desktop, icon only on mobile */}
+                  <button onClick={()=>navigator.clipboard.writeText(createdKey)} title="Copy" style={{display:"inline-flex",alignItems:"center",gap:6,fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-primary)",background:"transparent",border:0,cursor:"pointer",padding:"6px 10px",borderRadius:999,transition:"background .2s var(--ease)"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container)"}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <span className="hide-mobile">Copy</span>
+                  </button>
+                  {/* Download — icon + label on desktop, icon only on mobile */}
+                  <button onClick={()=>{const b=new Blob([JSON.stringify({key:createdKey,created:new Date().toISOString()},null,2)],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="edgeword-key.json";a.click();URL.revokeObjectURL(u);}} title="Download JSON"
+                    style={{display:"inline-flex",alignItems:"center",gap:6,fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-primary)",background:"transparent",border:0,cursor:"pointer",padding:"6px 10px",borderRadius:999,transition:"background .2s var(--ease)"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container)"}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span className="hide-mobile">Download JSON</span>
+                  </button>
+                </div>
+                <div style={{fontFamily:"var(--google-sans)",fontSize:11,color:"var(--md-on-primary-container)",opacity:.7,marginTop:6}}>Save this key — it won't be shown again.</div>
               </div>}
             </div>}
           </div>
@@ -270,9 +355,15 @@ export default function Home(){
   const taRef=useRef<HTMLTextAreaElement>(null);
   const mediaRef=useRef<MediaRecorder|null>(null);
   const fileRef=useRef<HTMLInputElement>(null);
+  const [showScrollBtn,setShowScrollBtn]=useState(false);
 
   useEffect(()=>{setAuthed(api.isLoggedIn());},[]);
-  useEffect(()=>{scrollRef.current?.scrollTo({top:scrollRef.current.scrollHeight,behavior:"smooth"});},[messages,generating]);
+  const scrollToBottom=useCallback(()=>window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"}),[]);
+  useEffect(()=>{scrollToBottom();},[messages,generating,scrollToBottom]);
+  useEffect(()=>{
+    const onScroll=()=>{const distFromBottom=document.body.scrollHeight-window.scrollY-window.innerHeight;setShowScrollBtn(distFromBottom>300);};
+    window.addEventListener("scroll",onScroll,{passive:true});return()=>window.removeEventListener("scroll",onScroll);
+  },[]);
   useEffect(()=>{if(!authed)return;const p=()=>api.health().then(setHealth).catch(()=>{});p();const iv=setInterval(p,30000);return()=>clearInterval(iv);},[authed]);
   useEffect(()=>{if(!taRef.current)return;taRef.current.style.height="auto";taRef.current.style.height=Math.min(taRef.current.scrollHeight,200)+"px";},[input]);
 
@@ -339,6 +430,13 @@ export default function Home(){
           </div>
         </div>
       </div>
+
+      {/* Scroll to bottom button */}
+      {showScrollBtn&&<button onClick={scrollToBottom} style={{position:"fixed",bottom:100,right:24,zIndex:45,width:40,height:40,borderRadius:"50%",background:"var(--md-surface-container-high)",border:"1px solid var(--md-outline-variant)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--md-on-surface-variant)",boxShadow:"0 2px 6px 2px var(--md-shadow-2)",transition:"all .2s var(--ease)",animation:"settle .25s var(--ease-emph) both"}}
+        onMouseEnter={e=>{e.currentTarget.style.background="var(--md-primary-container)";e.currentTarget.style.color="var(--md-on-primary-container)";}}
+        onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.color="var(--md-on-surface-variant)";}}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14"/><polyline points="19 12 12 19 5 12"/></svg>
+      </button>}
 
       {/* Side actions — desktop only */}
       <nav style={{position:"fixed",left:24,bottom:24,zIndex:45,display:"flex",flexDirection:"column",gap:0,alignItems:"flex-start"}} className="hide-mobile">
