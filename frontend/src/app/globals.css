@@ -208,3 +208,7 @@
 @media(min-width:768px){
   .hide-desktop{display:none!important}
 }
+
+/* Message action icons — show on hover (desktop), always on touch */
+article:hover .msg-actions { opacity: 1 !important; }
+@media (hover: none) { .msg-actions { opacity: 1 !important; } }

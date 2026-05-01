@@ -126,8 +126,9 @@ function AsstAvatar(){
 }
 
 /* ── Message ── */
-function Msg({msg,isUser}:{msg:Message;isUser:boolean}){
+function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}){
   const isError=!isUser&&msg.text.startsWith("Error:");
+  const [copied,setCopied]=useState(false);
   return(
     <article style={{position:"relative",padding:`0 0 var(--message-pad-y)`,paddingLeft:48,animation:"settle .35s var(--ease-emph) both"}}>
       <span style={{position:"absolute",left:0,top:0}}>{isUser?<UserAvatar/>:isError?
@@ -156,6 +157,22 @@ function Msg({msg,isUser}:{msg:Message;isUser:boolean}){
       {msg.toolResult&&<div style={{margin:"12px 0",padding:"12px 16px",background:"var(--md-surface-container)",borderRadius:8,fontFamily:"var(--mono)",fontSize:13,color:"var(--md-on-surface-variant)",border:"1px solid var(--md-outline-variant)"}}>{msg.toolResult}</div>}
       {msg.ragSources&&msg.ragSources.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{msg.ragSources.map((s,i)=><span key={i} style={{padding:"4px 10px",background:"var(--md-primary-container)",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-primary-container)"}}>{s}</span>)}</div>}
       {!isError&&msg.tokens!=null&&<div style={{marginTop:8,fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)",opacity:.6}}>{msg.tokens} tok{msg.tps!=null&&` · ${msg.tps.toFixed(1)} t/s`}{msg.cached&&" · cached"}</div>}
+      {/* Action icons — copy + re-run */}
+      {!isError&&<div style={{display:"flex",gap:2,marginTop:6,opacity:0,transition:"opacity .2s var(--ease)"}} className="msg-actions">
+        <button onClick={()=>{navigator.clipboard.writeText(msg.text);setCopied(true);setTimeout(()=>setCopied(false),1500);}} title="Copy"
+          style={{width:32,height:32,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:copied?"var(--md-primary)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
+          onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
+          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          {copied?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+          :<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
+        </button>
+        {onRerun&&<button onClick={onRerun} title="Re-run"
+          style={{width:32,height:32,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
+          onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
+          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+        </button>}
+      </div>}
     </article>
   );
 }
@@ -806,7 +823,8 @@ export default function Home(){
           <div ref={scrollRef}>
             {messages.map((m,i)=>{
               const sec=sections.find(s=>s.messageIndex===i);
-              return <div key={m.id}>{sec&&<SumDiv section={sec}/>}<Msg msg={m} isUser={m.role==="user"}/></div>;
+              const rerun=m.role==="user"?()=>send(m.text):i>0?()=>send(messages[i-1].text):undefined;
+              return <div key={m.id}>{sec&&<SumDiv section={sec}/>}<Msg msg={m} isUser={m.role==="user"} onRerun={rerun}/></div>;
             })}
             {generating&&<Thinking/>}
           </div>
