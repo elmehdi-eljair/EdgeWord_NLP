@@ -891,6 +891,7 @@ export default function Home(){
     const um:Message={id:uid(),role:"user",text:msg||(chatFiles.map(f=>f.name).join(", ")),timestamp:Date.now()};
     setMessages(p=>[...p,um]);setInput("");setChatFiles([]);setGenerating(true);api.saveMessage(um);
     try{
+      console.log("[Send] reasoningOn:",reasoningOn,"autoModeOn:",autoModeOn);
       if(reasoningOn){
         // Reasoning mode — SSE streaming
         const reasoning:Record<string,string>={};
@@ -1047,8 +1048,8 @@ export default function Home(){
             rows={1} style={{flex:1,background:"transparent",border:0,outline:0,resize:"none",fontFamily:"var(--sans)",fontSize:15,lineHeight:1.5,color:"var(--md-on-surface)",fontWeight:400,minHeight:24,maxHeight:200,padding:"8px 0"}}/>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {/* Reasoning toggle — icon only, like attach/voice */}
-            <button onClick={()=>setReasoningOn(!reasoningOn)} title={reasoningOn?"Reasoning ON — click to disable":"Enable deep reasoning"}
-              style={{width:36,height:36,borderRadius:"50%",background:reasoningOn?"var(--md-primary-container)":"transparent",border:0,cursor:"pointer",color:reasoningOn?"var(--md-primary)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
+            <button onClick={()=>{const next=!reasoningOn;setReasoningOn(next);console.log("[UI] Reasoning toggled:",next);}} title={reasoningOn?"Reasoning ON — click to disable":"Enable deep reasoning"}
+              style={{width:36,height:36,borderRadius:"50%",background:reasoningOn?"var(--md-primary)":"transparent",border:0,cursor:"pointer",color:reasoningOn?"#fff":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
               onMouseEnter={e=>{if(!reasoningOn)e.currentTarget.style.background="var(--md-surface-container-high)";}}
               onMouseLeave={e=>{if(!reasoningOn)e.currentTarget.style.background="transparent";}}>
               {/* Brain/reasoning icon */}
