@@ -1002,7 +1002,8 @@ export default function Home(){
               const rerun=m.role==="user"?()=>send(m.text):i>0?()=>send(messages[i-1].text):undefined;
               return <div key={m.id}>{sec&&<SumDiv section={sec}/>}<Msg msg={m} isUser={m.role==="user"} onRerun={rerun}/></div>;
             })}
-            {generating&&<Thinking/>}
+            {/* Thinking indicator only shows when generating AND no streaming placeholder exists */}
+            {generating&&!messages.some(m=>m.role==="assistant"&&m.text==="")&&<Thinking/>}
           </div>
         </div>
       </div>
