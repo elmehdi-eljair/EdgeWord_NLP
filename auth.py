@@ -55,10 +55,19 @@ class UserManager:
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 display_name TEXT,
+                email TEXT DEFAULT '',
+                theme TEXT DEFAULT 'light',
+                accent TEXT DEFAULT 'lime-violet',
                 created_at REAL NOT NULL,
                 last_login_at REAL
             )
         """)
+        # Migrate: add columns if missing (for existing DBs)
+        for col, default in [("email", "''"), ("theme", "'light'"), ("accent", "'lime-violet'")]:
+            try:
+                self.conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT {default}")
+            except Exception:
+                pass
         self.conn.commit()
 
     def register(self, username: str, password: str, display_name: str = "") -> dict:
@@ -113,6 +122,30 @@ class UserManager:
             algorithm=ALGORITHM,
         )
         return token
+
+    def get_profile(self, user_id: str) -> dict:
+        row = self.conn.execute(
+            "SELECT id, username, display_name, email, theme, accent, created_at FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        if not row:
+            return {}
+        return dict(row)
+
+    def update_profile(self, user_id: str, updates: dict) -> dict:
+        allowed = {"display_name", "email", "theme", "accent"}
+        sets = []
+        vals = []
+        for k, v in updates.items():
+            if k in allowed:
+                sets.append(f"{k} = ?")
+                vals.append(v)
+        if not sets:
+            return self.get_profile(user_id)
+        vals.append(user_id)
+        self.conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", vals)
+        self.conn.commit()
+        return self.get_profile(user_id)
 
     @staticmethod
     def verify_token(token: str) -> dict:

@@ -112,12 +112,44 @@ function SumDivider({ section }: { section: Section }) {
 }
 
 /* ─── Settings Overlay ─── */
-function SettingsSheet({ open, onClose, health, onLogout }: { open: boolean; onClose:()=>void; health: HealthStatus|null; onLogout:()=>void }) {
-  const [tab, setTab] = useState("profile");
+function SettingsSheet({ open, onClose, health, onLogout, initialTab }: { open: boolean; onClose:()=>void; health: HealthStatus|null; onLogout:()=>void; initialTab?:string }) {
+  const [tab, setTab] = useState(initialTab || "profile");
   const [maxT, setMaxT] = useState(256);
   const [temp, setTemp] = useState(0.7);
-  useEffect(()=>{ if(!open) return; setMaxT(Number(localStorage.getItem("edgeword_max_tokens")||"256")); setTemp(Number(localStorage.getItem("edgeword_temperature")||"0.7")); },[open]);
+  const [profile, setProfile] = useState<any>({});
+  const [docs, setDocs] = useState<any[]>([]);
+  const [keys, setKeys] = useState<any[]>([]);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [createdKey, setCreatedKey] = useState("");
+  const knowledgeFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(()=>{
+    if(!open) return;
+    setTab(initialTab || "profile");
+    setMaxT(Number(localStorage.getItem("edgeword_max_tokens")||"256"));
+    setTemp(Number(localStorage.getItem("edgeword_temperature")||"0.7"));
+    setCreatedKey("");
+    api.getProfile().then(setProfile).catch(()=>{});
+    api.listKnowledge().then(d=>setDocs(d.documents||[])).catch(()=>{});
+    api.listApiKeys().then(d=>setKeys(d.keys||[])).catch(()=>{});
+  },[open, initialTab]);
+
   if (!open) return null;
+
+  const saveProfile = (field:string, value:string) => {
+    setProfile((p:any)=>({...p,[field]:value}));
+    api.updateProfile({[field]:value});
+    if(field==="theme"){ document.documentElement.setAttribute("data-theme",value); localStorage.setItem("edgeword.theme",value); }
+  };
+
+  const handleDocUpload = async(e:React.ChangeEvent<HTMLInputElement>) => {
+    if(!e.target.files) return;
+    for(const f of Array.from(e.target.files)){
+      await api.uploadKnowledge(f);
+    }
+    api.listKnowledge().then(d=>setDocs(d.documents||[]));
+    e.target.value="";
+  };
 
   const tabs = [{id:"profile",label:"Profile",num:"01"},{id:"knowledge",label:"Knowledge",num:"02"},{id:"model",label:"Model",num:"03"},{id:"keys",label:"API Keys",num:"04"}];
 
@@ -158,18 +190,26 @@ function SettingsSheet({ open, onClose, health, onLogout }: { open: boolean; onC
                 <h3 style={{ fontFamily:"var(--sans)",fontWeight:600,fontSize:13,letterSpacing:".16em",textTransform:"uppercase",color:"var(--text-2)",marginBottom:18 }}>
                   <span style={{ color:"var(--violet)" }}>&#9656; </span>PROFILE
                 </h3>
-                {[["Display name",""],["Email",""],["Theme","select"]].map(([k,type])=>(
+                {[{k:"Display name",field:"display_name"},{k:"Email",field:"email"},{k:"Theme",field:"theme",type:"select"},{k:"Accent",field:"accent",type:"select-accent"}].map(({k,field,type})=>(
                   <div key={k} style={{ display:"grid",gridTemplateColumns:"180px 1fr",gap:24,padding:"14px 0",borderTop:"1px solid var(--line)",alignItems:"center" }}>
                     <span style={{ fontFamily:"var(--sans)",fontSize:13,color:"var(--text-2)",fontWeight:500 }}>{k}</span>
                     <div>
                       {type==="select" ? (
-                        <select style={{ width:"100%",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:8,padding:"9px 12px",fontFamily:"var(--sans)",fontSize:14,color:"var(--ink)",outline:"none" }}
-                          onChange={e=>{ const v=e.target.value; document.documentElement.setAttribute("data-theme",v); localStorage.setItem("edgeword.theme",v); }}>
+                        <select value={profile.theme||"light"} style={{ width:"100%",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:8,padding:"9px 12px",fontFamily:"var(--sans)",fontSize:14,color:"var(--ink)",outline:"none" }}
+                          onChange={e=>saveProfile("theme",e.target.value)}>
                           <option value="light">Light (cream)</option>
                           <option value="dark">Dark (electric)</option>
                         </select>
+                      ) : type==="select-accent" ? (
+                        <select value={profile.accent||"lime-violet"} style={{ width:"100%",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:8,padding:"9px 12px",fontFamily:"var(--sans)",fontSize:14,color:"var(--ink)",outline:"none" }}
+                          onChange={e=>saveProfile("accent",e.target.value)}>
+                          <option value="lime-violet">Lime / Violet</option>
+                          <option value="cyan-hot">Cyan / Hot</option>
+                          <option value="mono">Mono</option>
+                        </select>
                       ) : (
-                        <input style={{ width:"100%",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:8,padding:"9px 12px",fontFamily:"var(--sans)",fontSize:14,color:"var(--ink)",outline:"none" }} />
+                        <input value={profile[field]||""} onChange={e=>{setProfile((p:any)=>({...p,[field]:e.target.value}));}} onBlur={e=>saveProfile(field,e.target.value)}
+                          style={{ width:"100%",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:8,padding:"9px 12px",fontFamily:"var(--sans)",fontSize:14,color:"var(--ink)",outline:"none" }} />
                       )}
                     </div>
                   </div>
@@ -185,9 +225,26 @@ function SettingsSheet({ open, onClose, health, onLogout }: { open: boolean; onC
             {tab === "knowledge" && (
               <div>
                 <h3 style={{ fontFamily:"var(--sans)",fontWeight:600,fontSize:13,letterSpacing:".16em",textTransform:"uppercase",color:"var(--text-2)",marginBottom:18 }}>
-                  <span style={{ color:"var(--violet)" }}>&#9656; </span>KNOWLEDGE · {health?.rag_chunks || 0} CHUNKS
+                  <span style={{ color:"var(--violet)" }}>&#9656; </span>KNOWLEDGE · {docs.length} DOCS
                 </h3>
-                <p style={{ fontFamily:"var(--sans)",fontSize:14,color:"var(--text-2)" }}>Documents in <span style={{ fontFamily:"var(--mono)",fontSize:12,color:"var(--ink)" }}>./docs/</span> are auto-indexed on server start.</p>
+                <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:16 }}>
+                  {docs.map((d:any)=>(
+                    <div key={d.name} style={{ display:"grid",gridTemplateColumns:"1fr auto auto",gap:14,padding:"12px 14px",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:12,alignItems:"center" }}>
+                      <span style={{ fontFamily:"var(--sans)",fontWeight:500,fontSize:13,color:"var(--ink)" }}>{d.name}</span>
+                      <span style={{ fontFamily:"var(--mono)",fontSize:11,color:"var(--text-3)" }}>{d.chunks} chunks</span>
+                      <button onClick={async()=>{ await api.deleteKnowledge(d.name); api.listKnowledge().then(r=>setDocs(r.documents||[])); }}
+                        style={{ fontFamily:"var(--mono)",fontSize:9,letterSpacing:".14em",textTransform:"uppercase",color:"var(--text-2)",cursor:"pointer",background:"transparent",border:"1px solid var(--line)",padding:"4px 8px",borderRadius:6 }}>
+                        DELETE
+                      </button>
+                    </div>
+                  ))}
+                  {docs.length === 0 && <p style={{ fontFamily:"var(--sans)",fontSize:13,color:"var(--text-3)" }}>No documents indexed yet.</p>}
+                </div>
+                <button onClick={()=>knowledgeFileRef.current?.click()}
+                  style={{ padding:"10px 20px",background:"var(--surface)",border:"1px solid var(--line-2)",borderRadius:10,cursor:"pointer",fontFamily:"var(--mono)",fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--text-2)",transition:"all .25s var(--ease)" }}>
+                  UPLOAD DOCUMENT
+                </button>
+                <input ref={knowledgeFileRef} type="file" style={{display:"none"}} accept=".txt,.md,.py,.json,.csv,.yaml,.yml,.pdf" onChange={handleDocUpload} />
               </div>
             )}
 
@@ -218,9 +275,43 @@ function SettingsSheet({ open, onClose, health, onLogout }: { open: boolean; onC
             {tab === "keys" && (
               <div>
                 <h3 style={{ fontFamily:"var(--sans)",fontWeight:600,fontSize:13,letterSpacing:".16em",textTransform:"uppercase",color:"var(--text-2)",marginBottom:18 }}>
-                  <span style={{ color:"var(--violet)" }}>&#9656; </span>API KEYS
+                  <span style={{ color:"var(--violet)" }}>&#9656; </span>API KEYS · {keys.filter((k:any)=>k.is_active).length} ACTIVE
                 </h3>
-                <p style={{ fontFamily:"var(--sans)",fontSize:14,color:"var(--text-2)",marginBottom:12 }}>Manage keys via CLI: <span style={{ fontFamily:"var(--mono)",fontSize:12,color:"var(--ink)" }}>python api_keys.py list</span></p>
+                <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:16 }}>
+                  {keys.map((k:any)=>(
+                    <div key={k.id} style={{ display:"grid",gridTemplateColumns:"auto 1fr 1fr auto",gap:14,padding:"12px 14px",background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:12,alignItems:"center" }}>
+                      <span style={{ width:8,height:8,borderRadius:"50%",background:k.is_active?"var(--lime)":"var(--text-3)",boxShadow:k.is_active?"0 0 10px var(--lime)":"none" }} />
+                      <span style={{ fontFamily:"var(--sans)",fontWeight:500,fontSize:13,color:"var(--ink)" }}>{k.name}</span>
+                      <span style={{ fontFamily:"var(--mono)",fontSize:11,color:"var(--text-2)",letterSpacing:".02em" }}>{k.key_prefix} · {k.total_requests} req</span>
+                      {k.is_active && (
+                        <button onClick={async()=>{ await api.revokeApiKey(k.key_prefix); api.listApiKeys().then(r=>setKeys(r.keys||[])); }}
+                          style={{ fontFamily:"var(--mono)",fontSize:9,letterSpacing:".14em",textTransform:"uppercase",color:"var(--text-2)",cursor:"pointer",background:"transparent",border:"1px solid var(--line)",padding:"6px 10px",borderRadius:6,transition:"all .2s var(--ease)" }}>
+                          REVOKE
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {/* Create new key */}
+                <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+                  <input value={newKeyName} onChange={e=>setNewKeyName(e.target.value)} placeholder="Key name"
+                    style={{ flex:1,background:"var(--card-bg)",border:"1px solid var(--line)",borderRadius:8,padding:"9px 12px",fontFamily:"var(--sans)",fontSize:13,color:"var(--ink)",outline:"none" }} />
+                  <button onClick={async()=>{
+                    if(!newKeyName.trim()) return;
+                    const r = await api.createApiKey(newKeyName.trim());
+                    setCreatedKey(r.key);
+                    setNewKeyName("");
+                    api.listApiKeys().then(d=>setKeys(d.keys||[]));
+                  }} style={{ padding:"9px 16px",background:"var(--surface)",border:"1px solid var(--line-2)",borderRadius:8,cursor:"pointer",fontFamily:"var(--mono)",fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink)",transition:"all .25s var(--ease)" }}>
+                    CREATE
+                  </button>
+                </div>
+                {createdKey && (
+                  <div style={{ marginTop:12,padding:"12px 14px",background:"var(--surface-2)",borderRadius:10,fontFamily:"var(--mono)",fontSize:11,color:"var(--ink)",wordBreak:"break-all" }}>
+                    <span style={{ color:"var(--lime)",fontWeight:600 }}>NEW KEY:</span> {createdKey}
+                    <br/><span style={{ color:"var(--text-3)",fontSize:9 }}>Save this — it won't be shown again.</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -239,6 +330,8 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [generating, setGenerating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("profile");
+  const openSettings = (tab="profile") => { setSettingsTab(tab); setSettingsOpen(true); };
   const [health, setHealth] = useState<HealthStatus|null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [recording, setRecording] = useState(false);
@@ -335,7 +428,7 @@ export default function Home() {
             SYNC
           </span>
         )}
-        <span onClick={()=>setSettingsOpen(true)} style={{ width:36,height:36,borderRadius:"50%",background:"linear-gradient(135deg,var(--violet) 0,var(--hot) 100%)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--sans)",fontWeight:700,fontSize:14,color:"#fff",cursor:"pointer",border:"1px solid rgba(255,255,255,.2)",transition:"all .3s var(--ease)",boxShadow:"0 4px 16px -4px rgba(98,68,232,.5)" }}>
+        <span onClick={()=>openSettings("profile")} style={{ width:36,height:36,borderRadius:"50%",background:"linear-gradient(135deg,var(--violet) 0,var(--hot) 100%)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--sans)",fontWeight:700,fontSize:14,color:"#fff",cursor:"pointer",border:"1px solid rgba(255,255,255,.2)",transition:"all .3s var(--ease)",boxShadow:"0 4px 16px -4px rgba(98,68,232,.5)" }}>
           M
         </span>
       </div>
@@ -373,7 +466,7 @@ export default function Home() {
 
       {/* ── Side Actions (desktop, fixed bottom-left) ── */}
       <nav style={{ position:"fixed",left:36,bottom:160,zIndex:55,display:"flex",flexDirection:"column",gap:6 }} className="hidden md:flex">
-        {[{label:"SETTINGS",onClick:()=>setSettingsOpen(true)},{label:"KNOWLEDGE",onClick:()=>{setSettingsOpen(true)}},{label:"API KEYS",onClick:()=>{setSettingsOpen(true)}},{label:"SIGN OUT",onClick:()=>{api.logout();setAuthed(false)},danger:true}].map(a=>(
+        {[{label:"SETTINGS",onClick:()=>openSettings("profile")},{label:"KNOWLEDGE",onClick:()=>openSettings("knowledge")},{label:"API KEYS",onClick:()=>openSettings("keys")},{label:"SIGN OUT",onClick:()=>{api.logout();setAuthed(false)},danger:true}].map(a=>(
           <a key={a.label} onClick={a.onClick} style={{ display:"inline-flex",alignItems:"center",gap:10,padding:"8px 12px",background:"var(--surface)",border:"1px solid var(--line)",borderRadius:10,fontFamily:"var(--mono)",fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:a.danger?"var(--hot)":"var(--text-2)",textDecoration:"none",cursor:"pointer",transition:"all .25s var(--ease)",width:"fit-content",backdropFilter:"blur(20px)" }}>
             &#8853; {a.label}
           </a>
@@ -415,7 +508,7 @@ export default function Home() {
         <input ref={imgRef} type="file" style={{display:"none"}} accept="image/*" onChange={handleImg} />
       </div>
 
-      <SettingsSheet open={settingsOpen} onClose={()=>setSettingsOpen(false)} health={health} onLogout={()=>setAuthed(false)} />
+      <SettingsSheet open={settingsOpen} onClose={()=>setSettingsOpen(false)} health={health} onLogout={()=>setAuthed(false)} initialTab={settingsTab} />
     </>
   );
 }

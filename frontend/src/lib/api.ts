@@ -207,3 +207,68 @@ export async function clearConversation() {
   });
   return res.json();
 }
+
+// ── Profile ──
+
+export async function getProfile() {
+  const res = await fetch(`${API_BASE}/v1/profile`, { headers: headers() });
+  return res.json();
+}
+
+export async function updateProfile(updates: Record<string, any>) {
+  const res = await fetch(`${API_BASE}/v1/profile`, {
+    method: "PUT", headers: headers(), body: JSON.stringify(updates),
+  });
+  return res.json();
+}
+
+// ── Knowledge ──
+
+export async function listKnowledge() {
+  const res = await fetch(`${API_BASE}/v1/knowledge`, { headers: headers() });
+  return res.json();
+}
+
+export async function uploadKnowledge(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/v1/knowledge/upload`, {
+    method: "POST", headers: authHeaders(), body: form,
+  });
+  return res.json();
+}
+
+export async function deleteKnowledge(filename: string) {
+  const res = await fetch(`${API_BASE}/v1/knowledge/${filename}`, {
+    method: "DELETE", headers: headers(),
+  });
+  return res.json();
+}
+
+// ── Notifications ──
+
+export async function getNotifications() {
+  const res = await fetch(`${API_BASE}/v1/notifications`, { headers: headers() });
+  return res.json();
+}
+
+// ── API Keys ──
+
+export async function listApiKeys() {
+  const res = await fetch(`${API_BASE}/v1/keys`, { headers: headers() });
+  return res.json();
+}
+
+export async function createApiKey(name: string, rateLimit = 60) {
+  const res = await fetch(`${API_BASE}/v1/keys`, {
+    method: "POST", headers: headers(), body: JSON.stringify({ name, rate_limit: rateLimit }),
+  });
+  return res.json();
+}
+
+export async function revokeApiKey(keyPrefix: string) {
+  const res = await fetch(`${API_BASE}/v1/keys/${keyPrefix}`, {
+    method: "DELETE", headers: headers(),
+  });
+  return res.json();
+}

@@ -393,6 +393,135 @@ async def clear_conversation(auth: dict = Depends(verify_auth)):
     return {"status": "cleared"}
 
 
+# ── Profile endpoints ──
+
+@app.get("/v1/profile")
+async def get_profile(auth: dict = Depends(verify_auth)):
+    """Get current user's profile."""
+    uid = auth.get("sub") or auth.get("user_id", "")
+    profile = user_manager.get_profile(uid)
+    return profile or {"error": "not found"}
+
+
+@app.put("/v1/profile")
+async def update_profile(request: Request, auth: dict = Depends(verify_auth)):
+    """Update current user's profile (display_name, email, theme, accent)."""
+    uid = auth.get("sub") or auth.get("user_id", "")
+    body = await request.json()
+    profile = user_manager.update_profile(uid, body)
+    return profile
+
+
+# ── Knowledge (docs) endpoints ──
+
+@app.get("/v1/knowledge")
+async def list_knowledge(auth: dict = Depends(verify_auth)):
+    """List all indexed documents in the RAG knowledge base."""
+    if not rag_engine or not rag_engine.chunks:
+        return {"documents": [], "total_chunks": 0}
+    # Group chunks by source
+    sources: dict = {}
+    for c in rag_engine.chunks:
+        src = c["source"]
+        if src not in sources:
+            sources[src] = {"name": src, "chunks": 0}
+        sources[src]["chunks"] += 1
+    return {"documents": list(sources.values()), "total_chunks": rag_engine.doc_count}
+
+
+@app.post("/v1/knowledge/upload")
+async def upload_knowledge(
+    file: UploadFile = File(...),
+    auth: dict = Depends(verify_auth),
+):
+    """Upload a document to the knowledge base (./docs/)."""
+    docs_dir = Path(__file__).parent / "docs"
+    docs_dir.mkdir(exist_ok=True)
+    dest = docs_dir / file.filename
+    content = await file.read()
+    dest.write_bytes(content)
+    # Re-index if RAG engine exists
+    if rag_engine:
+        count = rag_engine.load_directory(str(docs_dir))
+        return {"status": "uploaded", "file": file.filename, "size": len(content), "total_chunks": count}
+    return {"status": "uploaded", "file": file.filename, "size": len(content), "note": "restart server to index"}
+
+
+@app.delete("/v1/knowledge/{filename}")
+async def delete_knowledge(filename: str, auth: dict = Depends(verify_auth)):
+    """Delete a document from the knowledge base."""
+    docs_dir = Path(__file__).parent / "docs"
+    target = docs_dir / filename
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    target.unlink()
+    # Re-index
+    if rag_engine:
+        rag_engine.load_directory(str(docs_dir))
+    return {"status": "deleted", "file": filename}
+
+
+# ── Notifications endpoint ──
+
+@app.get("/v1/notifications")
+async def get_notifications(auth: dict = Depends(verify_auth)):
+    """Get notifications for the current user."""
+    # Build notifications from recent system events
+    notifications = []
+    if health:
+        h = await health()
+        notifications.append({
+            "id": "sys-model",
+            "type": "INFO",
+            "text": f"Model {h.model or 'unknown'} is active.",
+            "timestamp": time.time(),
+        })
+    if rag_engine and rag_engine.doc_count > 0:
+        notifications.append({
+            "id": "sys-rag",
+            "type": "INFO",
+            "text": f"Knowledge base: {rag_engine.doc_count} chunks indexed.",
+            "timestamp": time.time(),
+        })
+    if response_cache:
+        stats = response_cache.stats()
+        if stats["total_hits"] > 0:
+            notifications.append({
+                "id": "sys-cache",
+                "type": "INFO",
+                "text": f"Cache: {stats['entries']} entries, {stats['total_hits']} hits.",
+                "timestamp": time.time(),
+            })
+    return {"notifications": notifications}
+
+
+# ── API Keys management via API ──
+
+@app.get("/v1/keys")
+async def list_keys(auth: dict = Depends(verify_auth)):
+    """List all API keys."""
+    keys = key_manager.list_keys()
+    return {"keys": keys}
+
+
+@app.post("/v1/keys")
+async def create_key(request: Request, auth: dict = Depends(verify_auth)):
+    """Create a new API key."""
+    body = await request.json()
+    name = body.get("name", "unnamed")
+    rate_limit = body.get("rate_limit", 60)
+    raw_key = key_manager.create_key(name, rate_limit)
+    return {"key": raw_key, "name": name, "rate_limit": rate_limit}
+
+
+@app.delete("/v1/keys/{key_prefix}")
+async def revoke_key(key_prefix: str, auth: dict = Depends(verify_auth)):
+    """Revoke an API key by prefix."""
+    if key_manager.revoke_key(key_prefix):
+        return {"status": "revoked"}
+    raise HTTPException(status_code=404, detail="Key not found")
+
+
 @app.post("/v1/classify", response_model=ClassifyResponse)
 async def classify(req: ClassifyRequest, auth: dict = Depends(verify_api_key)):
     """Classify sentiment of a single text."""
