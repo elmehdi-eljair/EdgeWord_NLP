@@ -127,6 +127,35 @@ function AsstAvatar(){
 }
 
 /* ── Message ── */
+/* ── Code Block with header, language tag, copy button ── */
+function CodeBlock({code,lang}:{code:string;lang:string}){
+  const [copied,setCopied]=useState(false);
+  return(
+    <div style={{margin:"16px 0",borderRadius:12,overflow:"hidden",border:"1px solid var(--md-outline-variant)"}}>
+      {/* Header bar */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px 8px 16px",background:"var(--md-surface-container-highest)"}}>
+        <span style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-surface-variant)",letterSpacing:".04em",textTransform:"uppercase"}}>{lang||"code"}</span>
+        <button onClick={()=>{navigator.clipboard.writeText(code);setCopied(true);setTimeout(()=>setCopied(false),1500);}}
+          style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:copied?"var(--md-primary)":"var(--md-on-surface-variant)",transition:"all .2s var(--ease)"}}
+          onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
+          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          {copied?<>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Copied
+          </>:<>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy
+          </>}
+        </button>
+      </div>
+      {/* Code content */}
+      <div style={{padding:"14px 18px",background:"var(--md-surface-container-high)",fontFamily:"var(--mono)",fontSize:13,lineHeight:1.7,color:"var(--md-on-surface)",overflowX:"auto",whiteSpace:"pre",WebkitOverflowScrolling:"touch"}}>
+        {code}
+      </div>
+    </div>
+  );
+}
+
 function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}){
   const isError=!isUser&&msg.text.startsWith("Error:");
   const [copied,setCopied]=useState(false);
@@ -156,8 +185,14 @@ function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}
             p:({children})=><p style={{marginBottom:".85em"}}>{children}</p>,
             strong:({children})=><strong style={{fontWeight:500,color:"var(--md-on-surface)"}}>{children}</strong>,
             em:({children})=><em style={{color:"var(--md-primary)",fontStyle:"normal",fontWeight:500}}>{children}</em>,
-            code:({children,className})=>className?<div style={{margin:"16px 0",background:"var(--md-surface-container-high)",border:"1px solid var(--md-outline-variant)",borderRadius:8,padding:"14px 18px",fontFamily:"var(--mono)",fontSize:13,lineHeight:1.6,color:"var(--md-on-surface)",overflowX:"auto",whiteSpace:"pre"}}>{children}</div>
-              :<code style={{fontFamily:"var(--mono)",fontSize:"0.9em",padding:"2px 6px",background:"var(--md-surface-container)",borderRadius:4,color:"var(--md-on-surface)"}}>{children}</code>,
+            code:({children,className})=>{
+              if(className){
+                const lang=className.replace("language-","");
+                const code=String(children).replace(/\n$/,"");
+                return <CodeBlock code={code} lang={lang}/>;
+              }
+              return <code style={{fontFamily:"var(--mono)",fontSize:"0.9em",padding:"2px 6px",background:"var(--md-surface-container)",borderRadius:4,color:"var(--md-on-surface)"}}>{children}</code>;
+            },
             pre:({children})=><>{children}</>,
             ul:({children})=><ul style={{paddingLeft:20,marginBottom:".85em"}}>{children}</ul>,
             ol:({children})=><ol style={{paddingLeft:20,marginBottom:".85em"}}>{children}</ol>,
