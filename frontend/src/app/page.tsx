@@ -2,28 +2,37 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import * as api from "@/lib/api";
-import { Message, Attachment, HealthStatus } from "@/lib/types";
+import { Message, Attachment, HealthStatus, Section } from "@/lib/types";
 import {
   MicIcon, PaperclipIcon, ImageIcon, SendIcon, StopIcon,
   CopyIcon, RefreshIcon, SpeakerIcon, GearIcon, XIcon,
   FileIcon, PlayIcon, PauseIcon, LogoutIcon,
+  SidebarIcon, SearchIcon, ClockIcon, ChevronRightIcon,
 } from "@/lib/icons";
 import AuthPage from "@/components/AuthPage";
 
 /* ─── Helpers ─── */
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function fmtTime(t: number) { return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+function fmtDate(t: number) {
+  const d = new Date(t);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return "Today";
+  const y = new Date(now.getTime() - 86400000);
+  if (d.toDateString() === y.toDateString()) return "Yesterday";
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+const SECTION_EVERY = 4; // generate summary every N messages (user+assistant pairs = 2 exchanges)
 
 /* ═══════════════════════════════════════════════════════════
-   COMPONENTS
+   SUB-COMPONENTS (same as before, compact)
    ═══════════════════════════════════════════════════════════ */
 
 function SentimentPill({ label, confidence }: { label: string; confidence: number }) {
   const pos = label === "POSITIVE";
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold tracking-wide backdrop-blur-sm ${
-      pos ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"
-    }`}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold tracking-wide backdrop-blur-sm ${pos ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"}`}>
       <span className={`w-[5px] h-[5px] rounded-full ${pos ? "bg-emerald-400" : "bg-rose-400"}`} />
       {label} <span className="opacity-50">{(confidence * 100).toFixed(0)}%</span>
     </span>
@@ -31,21 +40,11 @@ function SentimentPill({ label, confidence }: { label: string; confidence: numbe
 }
 
 function ToolResult({ result }: { result: string }) {
-  return (
-    <div className="rounded-xl px-4 py-3 text-[13px] font-mono text-ink-2 my-3 border-l-[3px] border-violet-400"
-      style={{ background: "rgba(123,63,238,0.04)" }}>
-      {result}
-    </div>
-  );
+  return <div className="rounded-xl px-4 py-3 text-[13px] font-mono text-ink-2 my-3 border-l-[3px] border-violet-400" style={{ background: "rgba(123,63,238,0.04)" }}>{result}</div>;
 }
 
 function RAGChip({ source }: { source: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium text-violet-600 border border-violet-200/60"
-      style={{ background: "rgba(123,63,238,0.04)" }}>
-      <FileIcon size={10} /> {source}
-    </span>
-  );
+  return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium text-violet-600 border border-violet-200/60" style={{ background: "rgba(123,63,238,0.04)" }}><FileIcon size={10} /> {source}</span>;
 }
 
 function AudioPlayer({ blob }: { blob: Blob }) {
@@ -53,9 +52,7 @@ function AudioPlayer({ blob }: { blob: Blob }) {
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   useEffect(() => {
-    const url = URL.createObjectURL(blob);
-    const a = new Audio(url);
-    audioRef.current = a;
+    const url = URL.createObjectURL(blob); const a = new Audio(url); audioRef.current = a;
     a.addEventListener("timeupdate", () => { if (a.duration) setProgress(a.currentTime / a.duration); });
     a.addEventListener("ended", () => { setPlaying(false); setProgress(0); });
     return () => { a.pause(); URL.revokeObjectURL(url); };
@@ -66,101 +63,64 @@ function AudioPlayer({ blob }: { blob: Blob }) {
         className="w-8 h-8 rounded-full bg-violet-500 text-white flex items-center justify-center hover:bg-violet-600 transition-colors shrink-0 shadow-sm">
         {playing ? <PauseIcon size={10} /> : <PlayIcon size={10} />}
       </button>
-      <div className="flex-1 h-[3px] bg-violet-100 rounded-full overflow-hidden">
-        <div className="h-full bg-violet-400 rounded-full transition-all duration-100" style={{ width: `${progress * 100}%` }} />
-      </div>
+      <div className="flex-1 h-[3px] bg-violet-100 rounded-full overflow-hidden"><div className="h-full bg-violet-400 rounded-full transition-all duration-100" style={{ width: `${progress * 100}%` }} /></div>
     </div>
   );
 }
 
-/* ─── User Message ─── */
-function UserMessage({ msg, onRerun }: { msg: Message; onRerun: () => void }) {
+function UserMessage({ msg, onRerun, id }: { msg: Message; onRerun: () => void; id?: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="flex justify-end anim-fade-up group">
-      <div className="max-w-[85%] sm:max-w-[75%] lg:max-w-[65%]">
-        {msg.attachments?.map((a, i) => (
-          <div key={i} className="flex justify-end mb-2">
-            {a.type === "image" && a.url && <img src={a.url} alt={a.name} className="w-20 h-20 rounded-2xl object-cover shadow-soft" />}
-            {a.type === "file" && (
-              <span className="inline-flex items-center gap-1.5 bg-white rounded-xl px-3 py-2 text-[12px] text-ink-3 shadow-soft">
-                <FileIcon size={13} /> {a.name}
-              </span>
-            )}
+    <div id={id} className="anim-fade-up group">
+      {/* User message — right-aligned, clean, no bubble */}
+      <div className="flex items-start justify-end gap-3">
+        <div className="max-w-[85%] sm:max-w-[70%]">
+          {msg.attachments?.map((a, i) => (
+            <div key={i} className="flex justify-end mb-2">
+              {a.type === "image" && a.url && <img src={a.url} alt={a.name} className="w-20 h-20 rounded-2xl object-cover shadow-soft" />}
+              {a.type === "file" && <span className="inline-flex items-center gap-1.5 bg-white/60 rounded-xl px-3 py-2 text-[12px] text-ink-3 shadow-soft"><FileIcon size={13} /> {a.name}</span>}
+            </div>
+          ))}
+          <p className="text-[15px] sm:text-[14px] text-ink font-medium leading-[1.7] whitespace-pre-wrap text-right">{msg.text}</p>
+          <div className="flex items-center justify-end gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => { navigator.clipboard.writeText(msg.text); setCopied(true); setTimeout(() => setCopied(false), 1200); }} className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors">{copied ? <span className="text-[10px] text-emerald-500 font-medium px-1">Copied</span> : <CopyIcon size={12} />}</button>
+            <button onClick={onRerun} className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors"><RefreshIcon size={12} /></button>
+            <span className="text-[10px] text-ink-4 ml-1">{fmtTime(msg.timestamp)}</span>
           </div>
-        ))}
-        <div className="rounded-[20px] rounded-br-md px-5 py-3.5"
-          style={{
-            background: "linear-gradient(135deg, #7B3FEE 0%, #8B5CF6 50%, #A855F7 100%)",
-            boxShadow: "0 2px 12px rgba(123,63,238,0.2)",
-          }}>
-          <p className="text-[15px] sm:text-[14px] text-white leading-[1.65] whitespace-pre-wrap">{msg.text}</p>
         </div>
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-1 mt-1 pr-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={() => { navigator.clipboard.writeText(msg.text); setCopied(true); setTimeout(() => setCopied(false), 1200); }}
-            className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors" title="Copy">
-            {copied ? <span className="text-[10px] text-emerald-500 font-medium px-1">Copied</span> : <CopyIcon size={12} />}
-          </button>
-          <button onClick={onRerun} className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors" title="Re-run"><RefreshIcon size={12} /></button>
-          <span className="text-[10px] text-ink-4 ml-1">{fmtTime(msg.timestamp)}</span>
+        {/* User initial */}
+        <div className="w-7 h-7 rounded-full shrink-0 mt-0.5 hidden sm:flex items-center justify-center text-[11px] font-bold text-white"
+          style={{ background: "linear-gradient(135deg, #7B3FEE, #A855F7)" }}>
+          U
         </div>
       </div>
     </div>
   );
 }
 
-/* ─── AI Response ─── */
 function AIResponse({ msg, onRerun }: { msg: Message; onRerun: () => void }) {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [copied, setCopied] = useState(false);
   return (
-    <div className="flex justify-start anim-fade-up group">
-      <div className="max-w-[90%] sm:max-w-[80%] lg:max-w-[70%]">
-        {/* Avatar + content */}
-        <div className="flex gap-3">
-          {/* Avatar */}
-          <div className="w-7 h-7 rounded-lg shrink-0 mt-1 hidden sm:block"
-            style={{ background: "linear-gradient(135deg, #7B3FEE, #A855F7)" }} />
-
-          <div className="flex-1 min-w-0">
-            {/* Sentiment */}
-            {msg.sentiment && (
-              <div className="mb-2.5 flex items-center gap-2 flex-wrap">
-                <SentimentPill label={msg.sentiment.label} confidence={msg.sentiment.confidence} />
-                {msg.cached && <span className="text-[10px] font-semibold text-amber bg-amber-bg px-2 py-0.5 rounded-full">CACHED</span>}
-              </div>
-            )}
-
-            {/* Response bubble */}
-            <div className="bg-white rounded-[20px] rounded-tl-md px-5 py-4 shadow-soft hover:shadow-medium transition-shadow duration-300">
-              <p className="text-[15px] sm:text-[14px] text-ink-2 leading-[1.75] whitespace-pre-wrap">{msg.text}</p>
-              {msg.toolResult && <ToolResult result={msg.toolResult} />}
-              {msg.ragSources && msg.ragSources.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-3">{msg.ragSources.map((s, i) => <RAGChip key={i} source={s} />)}</div>
-              )}
-              {audioBlob && <AudioPlayer blob={audioBlob} />}
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between mt-1.5 px-1">
-              {msg.tokens != null && (
-                <span className="text-[10px] text-ink-4 font-mono tracking-wider">
-                  {msg.tokens} tok
-                  {msg.tps != null && <><span className="mx-1 text-ink-5">/</span>{msg.tps.toFixed(1)} t/s</>}
-                  {msg.ttft != null && <><span className="mx-1 text-ink-5">/</span>{msg.ttft.toFixed(2)}s</>}
-                </span>
-              )}
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => { navigator.clipboard.writeText(msg.text); setCopied(true); setTimeout(() => setCopied(false), 1200); }}
-                  className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors" title="Copy">
-                  {copied ? <span className="text-[10px] text-emerald-500 font-medium px-1">Copied</span> : <CopyIcon size={12} />}
-                </button>
-                <button onClick={onRerun} className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors" title="Re-run"><RefreshIcon size={12} /></button>
-                <button onClick={async () => { try { setAudioBlob(await api.speak(msg.text)); } catch {} }}
-                  className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors" title="Speak"><SpeakerIcon size={12} /></button>
-                <span className="text-[10px] text-ink-4 ml-1">{fmtTime(msg.timestamp)}</span>
-              </div>
+    <div className="anim-fade-up group">
+      <div className="flex items-start gap-3">
+        <div className="w-7 h-7 rounded-lg shrink-0 mt-0.5 hidden sm:block"
+          style={{ background: "linear-gradient(135deg, #7B3FEE, #E832B8)", boxShadow: "0 2px 8px rgba(123,63,238,0.15)" }} />
+        <div className="flex-1 min-w-0 max-w-[90%] sm:max-w-[80%]">
+          {msg.cached && <div className="mb-2"><span className="text-[10px] font-semibold text-amber bg-amber-bg px-2 py-0.5 rounded-full">INSTANT</span></div>}
+          <div className="relative pl-4 border-l-2 border-violet-200/60">
+            <p className="text-[15px] sm:text-[14px] text-ink-2 leading-[1.85] whitespace-pre-wrap">{msg.text}</p>
+            {msg.toolResult && <ToolResult result={msg.toolResult} />}
+            {msg.ragSources && msg.ragSources.length > 0 && <div className="flex flex-wrap gap-1.5 mt-3">{msg.ragSources.map((s, i) => <RAGChip key={i} source={s} />)}</div>}
+            {audioBlob && <AudioPlayer blob={audioBlob} />}
+          </div>
+          <div className="flex items-center justify-between mt-2 pl-4">
+            {msg.tokens != null && <span className="text-[10px] text-ink-4/50 font-mono tracking-wider">{msg.tokens} tok{msg.tps != null && <><span className="mx-1">/</span>{msg.tps.toFixed(1)} t/s</>}{msg.ttft != null && <><span className="mx-1">/</span>{msg.ttft.toFixed(2)}s</>}</span>}
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={() => { navigator.clipboard.writeText(msg.text); setCopied(true); setTimeout(() => setCopied(false), 1200); }} className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors">{copied ? <span className="text-[10px] text-emerald-500 font-medium px-1">Copied</span> : <CopyIcon size={12} />}</button>
+              <button onClick={onRerun} className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors"><RefreshIcon size={12} /></button>
+              <button onClick={async () => { try { setAudioBlob(await api.speak(msg.text)); } catch {} }} className="p-1 rounded-md text-ink-4 hover:text-violet-500 transition-colors"><SpeakerIcon size={12} /></button>
+              <span className="text-[10px] text-ink-4 ml-1">{fmtTime(msg.timestamp)}</span>
             </div>
           </div>
         </div>
@@ -169,19 +129,14 @@ function AIResponse({ msg, onRerun }: { msg: Message; onRerun: () => void }) {
   );
 }
 
-/* ─── Thinking ─── */
 function ThinkingIndicator() {
   return (
     <div className="flex justify-start anim-fade-up">
       <div className="flex gap-3">
-        <div className="w-7 h-7 rounded-lg shrink-0 mt-1 hidden sm:block"
-          style={{ background: "linear-gradient(135deg, #7B3FEE, #A855F7)" }} />
+        <div className="w-7 h-7 rounded-lg shrink-0 mt-1 hidden sm:block" style={{ background: "linear-gradient(135deg, #7B3FEE, #A855F7)" }} />
         <div className="bg-white rounded-[20px] rounded-tl-md px-5 py-4 shadow-soft">
           <div className="flex items-center gap-2">
-            {[0, 1, 2].map(i => (
-              <span key={i} className="w-2 h-2 rounded-full bg-violet-400"
-                style={{ animation: `dotPulse 1.4s ease-in-out ${i * 0.15}s infinite` }} />
-            ))}
+            {[0,1,2].map(i => <span key={i} className="w-2 h-2 rounded-full bg-violet-400" style={{ animation: `dotPulse 1.4s ease-in-out ${i*0.15}s infinite` }} />)}
           </div>
         </div>
       </div>
@@ -189,41 +144,19 @@ function ThinkingIndicator() {
   );
 }
 
-/* ─── Empty State ─── */
 function EmptyState({ onSuggestion }: { onSuggestion: (t: string) => void }) {
   return (
     <div className="flex-1 flex items-center justify-center px-6 py-16">
       <div className="text-center max-w-lg w-full">
-        {/* Glowing mark */}
         <div className="relative inline-block mb-10 anim-fade-up">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-[18px] relative z-10 mx-auto"
-            style={{
-              background: "linear-gradient(135deg, #7B3FEE 0%, #A855F7 40%, #E832B8 100%)",
-              boxShadow: "0 8px 40px rgba(123,63,238,0.25)",
-            }} />
-          <div className="absolute inset-0 rounded-[18px] mx-auto anim-glow"
-            style={{ background: "linear-gradient(135deg, #7B3FEE, #E832B8)", filter: "blur(24px)", opacity: 0.2 }} />
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-[18px] relative z-10 mx-auto" style={{ background: "linear-gradient(135deg, #7B3FEE 0%, #A855F7 40%, #E832B8 100%)", boxShadow: "0 8px 40px rgba(123,63,238,0.25)" }} />
+          <div className="absolute inset-0 rounded-[18px] mx-auto anim-glow" style={{ background: "linear-gradient(135deg, #7B3FEE, #E832B8)", filter: "blur(24px)", opacity: 0.2 }} />
         </div>
-
-        <h2 className="font-bold text-ink mb-3 anim-fade-up delay-1"
-          style={{ fontSize: "clamp(22px, 4vw, 32px)", letterSpacing: "-0.03em" }}>
-          What's on your mind?
-        </h2>
-        <p className="text-ink-3 mb-12 anim-fade-up delay-2 mx-auto max-w-[300px]"
-          style={{ fontSize: "clamp(14px, 2vw, 16px)", lineHeight: 1.6 }}>
-          Ask anything. I'll classify, reason, and create — all on your CPU.
-        </p>
-
+        <h2 className="font-bold text-ink mb-3 anim-fade-up delay-1" style={{ fontSize: "clamp(22px, 4vw, 32px)", letterSpacing: "-0.03em" }}>What&apos;s on your mind?</h2>
+        <p className="text-ink-3 mb-12 anim-fade-up delay-2 mx-auto max-w-[300px]" style={{ fontSize: "clamp(14px, 2vw, 16px)", lineHeight: 1.6 }}>Ask anything. I&apos;ll classify, reason, and create — all on your CPU.</p>
         <div className="space-y-3 max-w-[400px] mx-auto">
-          {[
-            "Analyse the sentiment of a customer review",
-            "Who built EdgeWord and what can it do?",
-            "Calculate 256 times 128 plus 42",
-          ].map((s, i) => (
-            <button key={i} onClick={() => onSuggestion(s)}
-              className={`w-full text-left bg-white/70 backdrop-blur-sm rounded-2xl px-5 py-4 text-[14px] text-ink-3 hover:text-ink hover:bg-white transition-all duration-200 shadow-soft hover:shadow-medium active:scale-[0.98] anim-fade-up delay-${i + 3}`}>
-              {s}
-            </button>
+          {["Analyse the sentiment of a customer review", "Who built EdgeWord and what can it do?", "Calculate 256 times 128 plus 42"].map((s, i) => (
+            <button key={i} onClick={() => onSuggestion(s)} className={`w-full text-left bg-white/70 backdrop-blur-sm rounded-2xl px-5 py-4 text-[14px] text-ink-3 hover:text-ink hover:bg-white transition-all duration-200 shadow-soft hover:shadow-medium active:scale-[0.98] anim-fade-up delay-${i+3}`}>{s}</button>
           ))}
         </div>
       </div>
@@ -231,18 +164,104 @@ function EmptyState({ onSuggestion }: { onSuggestion: (t: string) => void }) {
   );
 }
 
-/* ─── Settings Panel ─── */
+/* ─── Conversation Sidebar ─── */
+function ConversationSidebar({ sections, search, setSearch, onScrollTo, open, onToggle }: {
+  sections: Section[]; search: string; setSearch: (s: string) => void;
+  onScrollTo: (idx: number) => void; open: boolean; onToggle: () => void;
+}) {
+  const filtered = search
+    ? sections.filter(s => s.title.toLowerCase().includes(search.toLowerCase()))
+    : sections;
+
+  // Group sections by date
+  const grouped: Record<string, Section[]> = {};
+  filtered.forEach(s => {
+    const key = fmtDate(s.timestamp);
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(s);
+  });
+
+  return (
+    <>
+      {/* Toggle button — always visible */}
+      <button onClick={onToggle} title={open ? "Hide sidebar" : "Show sidebar"}
+        className={`fixed top-[18px] z-20 p-2 rounded-xl transition-all duration-300 ${
+          open ? "left-[268px] sm:left-[288px]" : "left-4"
+        } text-ink-4 hover:text-violet-500 hover:bg-white/60`}>
+        <SidebarIcon size={16} />
+      </button>
+
+      {/* Sidebar panel */}
+      <div className={`fixed top-0 left-0 h-full z-10 transition-all duration-300 ease-out ${
+        open ? "w-[260px] sm:w-[280px] translate-x-0" : "w-[260px] sm:w-[280px] -translate-x-full"
+      }`}
+        style={{ background: "rgba(253,251,255,0.85)", backdropFilter: "blur(24px)", borderRight: "1px solid rgba(229,225,240,0.4)" }}>
+
+        <div className="flex flex-col h-full pt-14 pb-4">
+          {/* Header */}
+          <div className="px-5 mb-4">
+            <h3 className="text-[11px] font-semibold text-ink-4 uppercase tracking-[0.14em] mb-4">Conversation</h3>
+
+            {/* Search */}
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-4"><SearchIcon size={13} /></span>
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search topics..."
+                className="w-full pl-9 pr-3 py-2.5 text-[13px] bg-white/60 backdrop-blur-sm rounded-xl border-0 focus:outline-none focus:ring-2 focus:ring-violet-400/30 placeholder:text-ink-4/50 transition-all" />
+            </div>
+          </div>
+
+          {/* Sections list */}
+          <div className="flex-1 overflow-y-auto scrollbar-hide px-3">
+            {Object.keys(grouped).length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-[12px] text-ink-4">
+                  {sections.length === 0 ? "Summaries will appear as you chat" : "No results"}
+                </p>
+              </div>
+            ) : (
+              Object.entries(grouped).map(([date, secs]) => (
+                <div key={date} className="mb-4">
+                  <div className="text-[10px] font-semibold text-ink-4 uppercase tracking-[0.12em] px-2 mb-2">{date}</div>
+                  <div className="space-y-1">
+                    {secs.map(s => (
+                      <button key={s.id} onClick={() => onScrollTo(s.messageIndex)}
+                        className="w-full text-left group px-3 py-2.5 rounded-xl hover:bg-white/80 transition-all duration-150 active:scale-[0.98]">
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-1 h-1 rounded-full bg-violet-400 mt-2 shrink-0 group-hover:scale-150 transition-transform" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] text-ink-2 font-medium truncate group-hover:text-violet-600 transition-colors leading-snug">
+                              {s.title}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <ClockIcon size={10} />
+                              <span className="text-[10px] text-ink-4">{fmtTime(s.timestamp)}</span>
+                              <span className="text-[10px] text-ink-5">·</span>
+                              <span className="text-[10px] text-ink-4">{s.messageCount} msgs</span>
+                            </div>
+                          </div>
+                          <ChevronRightIcon size={12} />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ─── Settings Panel (unchanged) ─── */
 function SettingsPanel({ open, onClose, health, onLogout }: { open: boolean; onClose: () => void; health: HealthStatus | null; onLogout: () => void }) {
   const [maxTokens, setMaxTokens] = useState(256);
   const [temperature, setTemperature] = useState(0.7);
-  useEffect(() => {
-    if (!open) return;
-    setMaxTokens(Number(localStorage.getItem("edgeword_max_tokens") || "256"));
-    setTemperature(Number(localStorage.getItem("edgeword_temperature") || "0.7"));
-  }, [open]);
+  useEffect(() => { if (!open) return; setMaxTokens(Number(localStorage.getItem("edgeword_max_tokens")||"256")); setTemperature(Number(localStorage.getItem("edgeword_temperature")||"0.7")); }, [open]);
   const save = (k: string, v: string) => localStorage.setItem(k, v);
   if (!open) return null;
-
   return (
     <>
       <div className="fixed inset-0 bg-black/15 backdrop-blur-sm z-30 anim-fade-in" onClick={onClose} />
@@ -254,52 +273,30 @@ function SettingsPanel({ open, onClose, health, onLogout }: { open: boolean; onC
             <h2 className="text-[18px] font-bold text-ink" style={{ letterSpacing: "-0.02em" }}>Settings</h2>
             <button onClick={onClose} className="p-2 text-ink-4 hover:text-ink rounded-xl hover:bg-white transition-colors"><XIcon size={16} /></button>
           </div>
-
           <label className="text-[11px] font-semibold text-ink-4 uppercase tracking-[0.12em] block mb-5">Generation</label>
           <div className="space-y-6 mb-10">
             <div>
               <div className="flex justify-between mb-2"><span className="text-[13px] text-ink-2">Max tokens</span><span className="text-[13px] font-mono text-violet-500 font-semibold">{maxTokens}</span></div>
-              <input type="range" min="64" max="1024" step="64" value={maxTokens}
-                onChange={(e) => { setMaxTokens(Number(e.target.value)); save("edgeword_max_tokens", e.target.value); }}
+              <input type="range" min="64" max="1024" step="64" value={maxTokens} onChange={(e) => { setMaxTokens(Number(e.target.value)); save("edgeword_max_tokens", e.target.value); }}
                 className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-violet-500" style={{ background: `linear-gradient(to right, #7B3FEE ${maxTokens/10.24}%, #E5E1F0 ${maxTokens/10.24}%)` }} />
             </div>
             <div>
               <div className="flex justify-between mb-2"><span className="text-[13px] text-ink-2">Temperature</span><span className="text-[13px] font-mono text-violet-500 font-semibold">{temperature.toFixed(1)}</span></div>
-              <input type="range" min="0" max="1.5" step="0.1" value={temperature}
-                onChange={(e) => { setTemperature(Number(e.target.value)); save("edgeword_temperature", e.target.value); }}
+              <input type="range" min="0" max="1.5" step="0.1" value={temperature} onChange={(e) => { setTemperature(Number(e.target.value)); save("edgeword_temperature", e.target.value); }}
                 className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-violet-500" style={{ background: `linear-gradient(to right, #7B3FEE ${temperature/1.5*100}%, #E5E1F0 ${temperature/1.5*100}%)` }} />
             </div>
           </div>
-
           {health && (
-            <>
-              <label className="text-[11px] font-semibold text-ink-4 uppercase tracking-[0.12em] block mb-5">System</label>
-              <div className="bg-white rounded-2xl p-5 mb-10 shadow-soft space-y-3">
-                {[
-                  ["Model", health.model?.replace(".gguf","").replace("Llama-3.2-1B-Instruct-Q4_K_M","Llama 3.2 1B") || "—"],
-                  ["Fast-Path", health.fast_path ? "Ready" : "Off"],
-                  ["Compute-Path", health.compute_path ? "Ready" : "Off"],
-                  ["RAG", `${health.rag_chunks} chunks`],
-                  ["Cache", `${health.cache_entries} entries`],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between">
-                    <span className="text-[13px] text-ink-3">{k}</span>
-                    <span className={`text-[13px] font-medium ${v === "Ready" ? "text-emerald-500" : v === "Off" ? "text-ink-4" : "text-ink"}`}>{v}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+            <><label className="text-[11px] font-semibold text-ink-4 uppercase tracking-[0.12em] block mb-5">System</label>
+            <div className="bg-white rounded-2xl p-5 mb-10 shadow-soft space-y-3">
+              {[["Model", health.model?.replace(".gguf","").replace("Llama-3.2-1B-Instruct-Q4_K_M","Llama 3.2 1B")||"—"],["Fast-Path",health.fast_path?"Ready":"Off"],["Compute-Path",health.compute_path?"Ready":"Off"],["RAG",`${health.rag_chunks} chunks`],["Cache",`${health.cache_entries} entries`]].map(([k,v]) => (
+                <div key={k} className="flex justify-between"><span className="text-[13px] text-ink-3">{k}</span><span className={`text-[13px] font-medium ${v==="Ready"?"text-emerald-500":v==="Off"?"text-ink-4":"text-ink"}`}>{v}</span></div>
+              ))}
+            </div></>
           )}
-
           <div className="space-y-3">
-            <button onClick={async () => { await api.clearSession(); onClose(); location.reload(); }}
-              className="w-full py-3.5 text-[14px] font-medium text-ink-3 bg-white rounded-2xl shadow-soft hover:shadow-medium transition-all text-center">
-              Clear conversation
-            </button>
-            <button onClick={() => { api.logout(); onLogout(); }}
-              className="w-full py-3.5 text-[14px] font-medium text-rose-500 bg-white rounded-2xl shadow-soft hover:shadow-medium transition-all text-center">
-              Sign out
-            </button>
+            <button onClick={async () => { await api.clearSession(); onClose(); location.reload(); }} className="w-full py-3.5 text-[14px] font-medium text-ink-3 bg-white rounded-2xl shadow-soft hover:shadow-medium transition-all text-center">Clear conversation</button>
+            <button onClick={() => { api.logout(); onLogout(); }} className="w-full py-3.5 text-[14px] font-medium text-rose-500 bg-white rounded-2xl shadow-soft hover:shadow-medium transition-all text-center">Sign out</button>
           </div>
         </div>
       </div>
@@ -319,6 +316,10 @@ export default function Home() {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [recording, setRecording] = useState(false);
+  const [sections, setSections] = useState<Section[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarSearch, setSidebarSearch] = useState("");
+  const [lastSummarized, setLastSummarized] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecRef = useRef<MediaRecorder | null>(null);
@@ -337,6 +338,39 @@ export default function Home() {
     textareaRef.current.style.height = "auto";
     textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + "px";
   }, [input]);
+
+  // Open sidebar by default on desktop
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth >= 1024) setSidebarOpen(true);
+  }, []);
+
+  // Auto-summarize every SECTION_EVERY messages
+  useEffect(() => {
+    if (messages.length === 0 || generating) return;
+    if (messages.length - lastSummarized < SECTION_EVERY) return;
+
+    const startIdx = lastSummarized;
+    const endIdx = messages.length;
+    const chunk = messages.slice(startIdx, endIdx);
+    const text = chunk.map(m => `${m.role === "user" ? "User" : "AI"}: ${m.text}`).join("\n");
+
+    setLastSummarized(endIdx);
+
+    api.summarize(text).then(title => {
+      setSections(prev => [...prev, {
+        id: uid(),
+        title,
+        timestamp: chunk[0].timestamp,
+        messageIndex: startIdx,
+        messageCount: chunk.length,
+      }]);
+    });
+  }, [messages, generating, lastSummarized]);
+
+  const scrollToMessage = (idx: number) => {
+    const el = document.getElementById(`msg-${idx}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const send = useCallback(async (text?: string) => {
     const msg = text || input.trim();
@@ -378,109 +412,117 @@ export default function Home() {
   return (
     <div className="h-dvh flex flex-col" style={{ background: "linear-gradient(170deg, #FDFBFF 0%, #F8F5FF 40%, #FFFAFD 100%)" }}>
 
-      {/* ── Header ── */}
-      <header className="h-14 px-5 sm:px-7 sticky top-0 z-10 flex items-center justify-between shrink-0"
-        style={{ background: "rgba(253,251,255,0.7)", backdropFilter: "blur(20px)" }}>
-        <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-[8px]"
-            style={{ background: "linear-gradient(135deg, #7B3FEE, #A855F7)", boxShadow: "0 2px 8px rgba(123,63,238,0.2)" }} />
-          <span className="hidden sm:block text-[16px] font-bold text-ink" style={{ letterSpacing: "-0.02em" }}>EdgeWord</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {health && (
-            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-500 mr-3">
-              <span className="w-[6px] h-[6px] rounded-full bg-emerald-400" style={{ boxShadow: "0 0 6px rgba(16,185,129,0.4)" }} />
-              <span className="hidden sm:inline">Online</span>
-            </span>
-          )}
-          <button onClick={() => location.reload()} title="Refresh" className="p-2.5 text-ink-4 hover:text-violet-500 rounded-xl hover:bg-white/60 transition-all"><RefreshIcon size={15} /></button>
-          <button onClick={() => setSettingsOpen(true)} title="Settings" className="p-2.5 text-ink-4 hover:text-violet-500 rounded-xl hover:bg-white/60 transition-all"><GearIcon size={15} /></button>
-          <button onClick={() => { api.logout(); setAuthed(false); }} title="Sign out" className="p-2.5 text-ink-4 hover:text-rose-500 rounded-xl hover:bg-rose-50/60 transition-all"><LogoutIcon size={15} /></button>
-        </div>
-      </header>
+      {/* Sidebar */}
+      <ConversationSidebar
+        sections={sections} search={sidebarSearch} setSearch={setSidebarSearch}
+        onScrollTo={scrollToMessage} open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
 
-      {/* ── Conversation ── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide">
-        {messages.length === 0 && !generating ? (
-          <EmptyState onSuggestion={t => send(t)} />
-        ) : (
-          <div className="max-w-[760px] mx-auto px-4 sm:px-6 py-6 space-y-5">
-            {messages.map((m, i) => m.role === "user"
-              ? <UserMessage key={m.id} msg={m} onRerun={() => send(m.text)} />
-              : <AIResponse key={m.id} msg={m} onRerun={() => { const p = messages[i-1]; if (p) send(p.text); }} />
-            )}
-            {generating && <ThinkingIndicator />}
+      {/* Main area — shifts right when sidebar is open on desktop */}
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarOpen ? "lg:ml-[280px]" : "ml-0"}`}>
+
+        {/* Header */}
+        <header className="h-14 px-5 sm:px-7 sticky top-0 z-10 flex items-center justify-between shrink-0"
+          style={{ background: "rgba(253,251,255,0.7)", backdropFilter: "blur(20px)" }}>
+          <div className="flex items-center gap-3 ml-10">
+            <div className="w-7 h-7 rounded-[8px]" style={{ background: "linear-gradient(135deg, #7B3FEE, #A855F7)", boxShadow: "0 2px 8px rgba(123,63,238,0.2)" }} />
+            <span className="hidden sm:block text-[16px] font-bold text-ink" style={{ letterSpacing: "-0.02em" }}>EdgeWord</span>
           </div>
-        )}
-      </div>
+          <div className="flex items-center gap-1">
+            {health && (
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-500 mr-3">
+                <span className="w-[6px] h-[6px] rounded-full bg-emerald-400" style={{ boxShadow: "0 0 6px rgba(16,185,129,0.4)" }} />
+                <span className="hidden sm:inline">Online</span>
+              </span>
+            )}
+            <button onClick={() => location.reload()} title="Refresh" className="p-2.5 text-ink-4 hover:text-violet-500 rounded-xl hover:bg-white/60 transition-all"><RefreshIcon size={15} /></button>
+            <button onClick={() => setSettingsOpen(true)} title="Settings" className="p-2.5 text-ink-4 hover:text-violet-500 rounded-xl hover:bg-white/60 transition-all"><GearIcon size={15} /></button>
+            <button onClick={() => { api.logout(); setAuthed(false); }} title="Sign out" className="p-2.5 text-ink-4 hover:text-rose-500 rounded-xl hover:bg-rose-50/60 transition-all"><LogoutIcon size={15} /></button>
+          </div>
+        </header>
 
-      {/* ── Prompt Bar ── */}
-      <div className="sticky bottom-0 px-4 sm:px-6 pb-4 sm:pb-6 pt-4 pb-safe"
-        style={{ background: "linear-gradient(to top, rgba(253,251,255,1) 50%, transparent)" }}>
-        <div className="max-w-[760px] mx-auto">
-          <div className="rounded-[24px] overflow-hidden shadow-elevated transition-shadow duration-300 hover:shadow-violet"
-            style={{ background: "rgba(255,255,255,0.9)", backdropFilter: "blur(20px)", border: "1px solid rgba(229,225,240,0.6)" }}>
-
-            {/* Attachments */}
-            {attachments.length > 0 && (
-              <div className="flex flex-wrap gap-2 px-5 pt-4 anim-fade-up">
-                {attachments.map((a, i) => (
-                  <div key={i} className="relative group">
-                    {a.type === "image" && a.url
-                      ? <img src={a.url} alt={a.name} className="w-14 h-14 rounded-xl object-cover shadow-soft" />
-                      : <span className="inline-flex items-center gap-1.5 bg-bg-2/50 rounded-xl px-3 py-2 text-[11px] text-ink-3"><FileIcon size={12} />{a.name}</span>}
-                    <button onClick={() => removeAttachment(i)} className="absolute -top-1 -right-1 w-4 h-4 bg-ink-2 text-white rounded-full flex items-center justify-center hover:bg-ink transition-colors"><XIcon size={8} /></button>
+        {/* Conversation */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide">
+          {messages.length === 0 && !generating ? (
+            <EmptyState onSuggestion={t => send(t)} />
+          ) : (
+            <div className="max-w-[760px] mx-auto px-4 sm:px-6 py-6 space-y-5">
+              {messages.map((m, i) => {
+                // Section divider
+                const section = sections.find(s => s.messageIndex === i);
+                return (
+                  <div key={m.id}>
+                    {section && i > 0 && (
+                      <div className="flex items-center gap-3 py-4 anim-fade-in" id={`msg-${i}`}>
+                        <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, transparent, rgba(123,63,238,0.15), transparent)" }} />
+                        <span className="text-[11px] font-semibold text-violet-400 tracking-wide whitespace-nowrap">{section.title}</span>
+                        <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, transparent, rgba(123,63,238,0.15), transparent)" }} />
+                      </div>
+                    )}
+                    {!section && i === 0 && <div id={`msg-${i}`} />}
+                    {m.role === "user"
+                      ? <UserMessage msg={m} onRerun={() => send(m.text)} id={section ? undefined : `msg-${i}`} />
+                      : <AIResponse msg={m} onRerun={() => { const p = messages[i-1]; if (p) send(p.text); }} />
+                    }
                   </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex items-end">
-              {/* Desktop icons */}
-              <div className="hidden sm:flex items-center gap-0.5 pl-4 pb-3.5">
-                <button onClick={toggleRecording} className={`p-2.5 rounded-xl transition-all ${recording ? "text-rose-500 bg-rose-50" : "text-ink-4 hover:text-violet-500 hover:bg-violet-50"}`}><MicIcon size={18} /></button>
-                <button onClick={() => fileRef.current?.click()} className="p-2.5 rounded-xl text-ink-4 hover:text-violet-500 hover:bg-violet-50 transition-all"><PaperclipIcon size={18} /></button>
-                <button onClick={() => imgRef.current?.click()} className="p-2.5 rounded-xl text-ink-4 hover:text-violet-500 hover:bg-violet-50 transition-all"><ImageIcon size={18} /></button>
-              </div>
-
-              <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if ((e.metaKey||e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send(); } }}
-                placeholder="Ask me anything..."
-                rows={1}
-                className="flex-1 text-[16px] sm:text-[15px] text-ink resize-none border-none outline-none bg-transparent py-4 pl-5 sm:pl-2 pr-2 max-h-[160px] placeholder:text-ink-4/60" />
-
-              <div className="pr-4 pb-3.5">
-                {generating ? (
-                  <button className="w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center shadow-sm"><StopIcon size={14} /></button>
-                ) : (
-                  <button onClick={() => send()} disabled={!canSend}
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 ${
-                      canSend ? "text-white active:scale-90" : "bg-transparent text-ink-4"
-                    }`}
-                    style={canSend ? { background: "linear-gradient(135deg, #7B3FEE, #A855F7)", boxShadow: "0 2px 12px rgba(123,63,238,0.3)" } : {}}>
-                    <SendIcon size={16} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Mobile icons */}
-            <div className="sm:hidden flex items-center gap-0.5 px-4 pb-2.5">
-              <button onClick={toggleRecording} className={`p-2.5 rounded-xl transition-all ${recording ? "text-rose-500 bg-rose-50" : "text-ink-4 active:text-violet-500"}`}><MicIcon size={20} /></button>
-              <button onClick={() => fileRef.current?.click()} className="p-2.5 rounded-xl text-ink-4 active:text-violet-500"><PaperclipIcon size={20} /></button>
-              <button onClick={() => imgRef.current?.click()} className="p-2.5 rounded-xl text-ink-4 active:text-violet-500"><ImageIcon size={20} /></button>
-            </div>
-          </div>
-
-          {health && (
-            <div className="mt-3 text-center text-[11px] text-ink-4/60 font-mono tracking-wider">
-              {health.model?.replace(".gguf","").replace("Llama-3.2-1B-Instruct-Q4_K_M","Llama 3.2 1B")}
-              <span className="mx-2 text-ink-5">·</span>{messages.filter(m => m.role === "user").length} turns
+                );
+              })}
+              {generating && <ThinkingIndicator />}
             </div>
           )}
         </div>
-        <input ref={fileRef} type="file" className="hidden" accept=".txt,.md,.py,.json,.csv,.yaml,.yml" onChange={handleFile} />
-        <input ref={imgRef} type="file" className="hidden" accept="image/*" onChange={handleImage} />
+
+        {/* Prompt Bar */}
+        <div className="sticky bottom-0 px-4 sm:px-6 pb-4 sm:pb-6 pt-4 pb-safe"
+          style={{ background: "linear-gradient(to top, rgba(253,251,255,1) 50%, transparent)" }}>
+          <div className="max-w-[760px] mx-auto">
+            <div className="rounded-[24px] overflow-hidden shadow-elevated transition-shadow duration-300 hover:shadow-violet"
+              style={{ background: "rgba(255,255,255,0.9)", backdropFilter: "blur(20px)", border: "1px solid rgba(229,225,240,0.6)" }}>
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-5 pt-4 anim-fade-up">
+                  {attachments.map((a, i) => (
+                    <div key={i} className="relative group">
+                      {a.type === "image" && a.url ? <img src={a.url} alt={a.name} className="w-14 h-14 rounded-xl object-cover shadow-soft" /> : <span className="inline-flex items-center gap-1.5 bg-bg-2/50 rounded-xl px-3 py-2 text-[11px] text-ink-3"><FileIcon size={12} />{a.name}</span>}
+                      <button onClick={() => removeAttachment(i)} className="absolute -top-1 -right-1 w-4 h-4 bg-ink-2 text-white rounded-full flex items-center justify-center hover:bg-ink transition-colors"><XIcon size={8} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-end">
+                <div className="hidden sm:flex items-center gap-0.5 pl-4 pb-3.5">
+                  <button onClick={toggleRecording} className={`p-2.5 rounded-xl transition-all ${recording ? "text-rose-500 bg-rose-50" : "text-ink-4 hover:text-violet-500 hover:bg-violet-50"}`}><MicIcon size={18} /></button>
+                  <button onClick={() => fileRef.current?.click()} className="p-2.5 rounded-xl text-ink-4 hover:text-violet-500 hover:bg-violet-50 transition-all"><PaperclipIcon size={18} /></button>
+                  <button onClick={() => imgRef.current?.click()} className="p-2.5 rounded-xl text-ink-4 hover:text-violet-500 hover:bg-violet-50 transition-all"><ImageIcon size={18} /></button>
+                </div>
+                <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                  placeholder="Ask me anything..." rows={1}
+                  className="flex-1 text-[16px] sm:text-[15px] text-ink resize-none border-none outline-none bg-transparent py-4 pl-5 sm:pl-2 pr-2 max-h-[160px] placeholder:text-ink-4/60" />
+                <div className="pr-4 pb-3.5">
+                  {generating
+                    ? <button className="w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center shadow-sm"><StopIcon size={14} /></button>
+                    : <button onClick={() => send()} disabled={!canSend} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 ${canSend ? "text-white active:scale-90" : "bg-transparent text-ink-4"}`}
+                        style={canSend ? { background: "linear-gradient(135deg, #7B3FEE, #A855F7)", boxShadow: "0 2px 12px rgba(123,63,238,0.3)" } : {}}>
+                        <SendIcon size={16} />
+                      </button>
+                  }
+                </div>
+              </div>
+              <div className="sm:hidden flex items-center gap-0.5 px-4 pb-2.5">
+                <button onClick={toggleRecording} className={`p-2.5 rounded-xl transition-all ${recording ? "text-rose-500 bg-rose-50" : "text-ink-4 active:text-violet-500"}`}><MicIcon size={20} /></button>
+                <button onClick={() => fileRef.current?.click()} className="p-2.5 rounded-xl text-ink-4 active:text-violet-500"><PaperclipIcon size={20} /></button>
+                <button onClick={() => imgRef.current?.click()} className="p-2.5 rounded-xl text-ink-4 active:text-violet-500"><ImageIcon size={20} /></button>
+              </div>
+            </div>
+            {health && (
+              <div className="mt-3 text-center text-[11px] text-ink-4/60 font-mono tracking-wider">
+                {health.model?.replace(".gguf","").replace("Llama-3.2-1B-Instruct-Q4_K_M","Llama 3.2 1B")}
+                <span className="mx-2 text-ink-5">&middot;</span>{messages.filter(m => m.role === "user").length} turns
+              </div>
+            )}
+          </div>
+          <input ref={fileRef} type="file" className="hidden" accept=".txt,.md,.py,.json,.csv,.yaml,.yml" onChange={handleFile} />
+          <input ref={imgRef} type="file" className="hidden" accept="image/*" onChange={handleImage} />
+        </div>
       </div>
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} health={health} onLogout={() => setAuthed(false)} />

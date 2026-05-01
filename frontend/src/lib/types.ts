@@ -51,3 +51,11 @@ export interface ChatResponse {
   cached: boolean;
   session_id: string;
 }
+
+export interface Section {
+  id: string;
+  title: string;
+  timestamp: number;
+  messageIndex: number;
+  messageCount: number;
+}

@@ -99,6 +99,18 @@ export async function classify(text: string) {
   return res.json();
 }
 
+export async function summarize(messages: string): Promise<string> {
+  try {
+    const res = await chat(
+      `Generate a very short title (max 6 words) that summarizes this conversation. Reply ONLY with the title, nothing else:\n\n${messages}`,
+      { maxTokens: 20, temperature: 0.3, useRag: false, useTools: false, useCache: false }
+    );
+    return res.response.replace(/^["']|["']$/g, "").trim();
+  } catch {
+    return "Conversation";
+  }
+}
+
 export async function transcribe(file: File, language?: string) {
   const form = new FormData();
   form.append("file", file);
