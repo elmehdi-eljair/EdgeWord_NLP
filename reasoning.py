@@ -25,7 +25,7 @@ STAGES = [
             "3. What are the key concepts involved?\n"
             "Be concise — 3-5 sentences max. This is internal thinking, not the final answer."
         ),
-        "max_tokens": 120,
+        "max_tokens": 200,
     },
     {
         "name": "retrieve",
@@ -36,7 +36,7 @@ STAGES = [
             "Score each piece of evidence: highly relevant, somewhat relevant, or not relevant.\n"
             "Be concise — list format."
         ),
-        "max_tokens": 100,
+        "max_tokens": 150,
     },
     {
         "name": "reason",
@@ -49,7 +49,7 @@ STAGES = [
             "4. Reach a conclusion\n"
             "This is your internal reasoning chain — be thorough."
         ),
-        "max_tokens": 200,
+        "max_tokens": 300,
     },
     {
         "name": "synthesise",
@@ -59,7 +59,7 @@ STAGES = [
             "Use your analysis, evidence, and reasoning to produce a clear, well-structured response.\n"
             "Be precise, helpful, and direct. This is what the user will see."
         ),
-        "max_tokens": 300,
+        "max_tokens": 512,
     },
 ]
 

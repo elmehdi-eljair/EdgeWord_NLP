@@ -197,7 +197,7 @@ function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}
           Something went wrong. Tap the info icon for details.
         </div>
       :
-        <div className="msg-body" style={{fontFamily:"var(--sans)",fontSize:15.5,lineHeight:1.6,color:"var(--md-on-surface-variant)",fontWeight:400,maxWidth:"62ch"}}>
+        <div className="msg-body" style={{fontFamily:"var(--sans)",fontSize:15.5,lineHeight:1.6,color:"var(--md-on-surface-variant)",fontWeight:400,maxWidth:"80ch"}}>
           <Markdown components={{
             p:({children})=><p style={{marginBottom:".85em"}}>{children}</p>,
             strong:({children})=><strong style={{fontWeight:500,color:"var(--md-on-surface)"}}>{children}</strong>,
@@ -899,23 +899,25 @@ export default function Home(){
         // Add a placeholder message that we'll update
         const amId=uid();
         setMessages(p=>[...p,{id:amId,role:"assistant",text:"",reasoning:{},timestamp:Date.now()}]);
+        console.log("[Reasoning] Starting SSE stream");
         await api.chatReason(fullMsg,(event)=>{
+          console.log("[Reasoning] Event:",event.type,event.type==="token"?event.text?.slice(0,20):event.name||"");
           if(event.type==="stage"){
             currentStage=event.name;
             reasoning[event.name]="";
-            // Show which stage we're on
             const stageLabel:{[k:string]:string}={analyse:"Analysing...",retrieve:"Retrieving...",reason:"Reasoning...",synthesise:"Writing answer..."};
             setMessages(p=>p.map(m=>m.id===amId?{...m,text:stageLabel[event.name]||"Thinking...",reasoning:{...reasoning}}:m));
           }else if(event.type==="token"){
             reasoning[event.name]=(reasoning[event.name]||"")+event.text;
-            // Show live streaming — display synthesise text if available, otherwise show current stage output
             const displayText=reasoning.synthesise||`**${currentStage.toUpperCase()}**\n${reasoning[currentStage]||""}`;
             setMessages(p=>p.map(m=>m.id===amId?{...m,text:displayText,reasoning:{...reasoning}}:m));
           }else if(event.type==="stage_done"){
             reasoning[event.name]=event.output;
+            console.log("[Reasoning] Stage done:",event.name,"output length:",event.output?.length);
             setMessages(p=>p.map(m=>m.id===amId?{...m,reasoning:{...reasoning}}:m));
           }else if(event.type==="done"){
             finalResponse=event.response||"";
+            console.log("[Reasoning] Complete. Final response length:",finalResponse.length,"Stages:",Object.keys(event.reasoning||{}));
             setMessages(p=>p.map(m=>m.id===amId?{...m,text:finalResponse,reasoning:event.reasoning}:m));
           }
         });
@@ -927,9 +929,10 @@ export default function Home(){
         let streamText="";
         let meta:any={};
         setMessages(p=>[...p,{id:amId,role:"assistant",text:"",timestamp:Date.now()}]);
+        console.log("[Stream] Starting SSE stream");
         await api.chatStream(fullMsg,(event)=>{
           if(event.type==="meta"){
-            meta=event;
+            meta=event;console.log("[Stream] Meta:",meta.auto_profile,meta.skill_used);
           }else if(event.type==="token"){
             streamText+=event.text;
             setMessages(p=>p.map(m=>m.id===amId?{...m,text:streamText}:m));
@@ -984,7 +987,7 @@ export default function Home(){
 
       {/* Stage */}
       <div style={{position:"relative",minHeight:"100vh",padding:"24px 24px 110px"}}>
-        <div style={{marginTop:96,maxWidth:840,marginLeft:"auto",marginRight:"auto",padding:"0 16px"}}>
+        <div style={{marginTop:96,maxWidth:960,marginLeft:"auto",marginRight:"auto",padding:"0 16px"}}>
 
           {/* Opener */}
           <h1 style={{fontFamily:"var(--google-sans)",fontWeight:400,fontSize:"clamp(28px, 5vw, 48px)",lineHeight:1.05,letterSpacing:"-.02em",color:"var(--md-on-surface)",marginBottom:8}}>
@@ -1025,7 +1028,7 @@ export default function Home(){
       </nav>
 
       {/* Composer — fixed bottom */}
-      <div style={{position:"fixed",left:"50%",bottom:0,transform:"translateX(-50%)",width:"100%",maxWidth:840,padding:"16px 16px 24px",background:`linear-gradient(to top,var(--md-surface) 0%,var(--md-surface) 65%,transparent 100%)`,zIndex:40}} className="pb-safe">
+      <div style={{position:"fixed",left:"50%",bottom:0,transform:"translateX(-50%)",width:"100%",maxWidth:960,padding:"16px 16px 24px",background:`linear-gradient(to top,var(--md-surface) 0%,var(--md-surface) 65%,transparent 100%)`,zIndex:40}} className="pb-safe">
         <div style={{background:"var(--md-surface-container)",border:"1px solid transparent",borderRadius:28,transition:"all .2s var(--ease)",overflow:"hidden"}}>
           {/* Attached files preview */}
           {chatFiles.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"10px 16px 0"}}>

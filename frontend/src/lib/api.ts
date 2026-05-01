@@ -81,7 +81,7 @@ export async function chat(
     headers: headers(),
     body: JSON.stringify({
       message,
-      max_tokens: opts.maxTokens ?? 256,
+      max_tokens: opts.maxTokens ?? 512,
       temperature: opts.temperature ?? 0.7,
       top_p: opts.topP ?? 0.9,
       top_k: opts.topK ?? 40,
@@ -231,7 +231,7 @@ export async function chatStream(
     headers: headers(),
     body: JSON.stringify({
       message,
-      max_tokens: opts.maxTokens ?? 256,
+      max_tokens: opts.maxTokens ?? 512,
       temperature: opts.temperature ?? 0.7,
       top_p: opts.topP ?? 0.9,
       top_k: opts.topK ?? 40,
