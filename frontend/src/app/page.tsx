@@ -168,9 +168,9 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
   const tabs=[{id:"profile",label:"Profile"},{id:"appearance",label:"Appearance"},{id:"knowledge-full",label:"Knowledge"},{id:"model",label:"Model"},{id:"keys",label:"API Keys"}];
 
   return(
-    <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"64px 24px 24px"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 24px 24px",overflowY:"auto"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div style={{position:"absolute",inset:0,background:"rgba(32,33,36,.32)",opacity:1,transition:"opacity .25s var(--ease)"}}/>
-      <section style={{position:"relative",width:"100%",maxWidth:1100,background:"var(--md-surface)",borderRadius:24,padding:"32px 40px 40px",transform:"translateY(0) scale(1)",boxShadow:"0 24px 38px 3px rgba(60,64,67,.14),0 9px 46px 8px rgba(60,64,67,.12),0 11px 15px -7px rgba(60,64,67,.20)",animation:"settle .35s var(--ease-emph) both"}}>
+      <section style={{position:"relative",width:"100%",maxWidth:1100,maxHeight:"calc(100vh - 80px)",overflowY:"auto",background:"var(--md-surface)",borderRadius:24,padding:"28px 36px 36px",transform:"translateY(0) scale(1)",boxShadow:"0 24px 38px 3px rgba(60,64,67,.14),0 9px 46px 8px rgba(60,64,67,.12),0 11px 15px -7px rgba(60,64,67,.20)",animation:"settle .35s var(--ease-emph) both"}} className="scrollbar-hide">
         <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,paddingBottom:16,borderBottom:"1px solid var(--md-outline-variant)"}}>
           <h2 style={{fontFamily:"var(--google-sans)",fontWeight:400,fontSize:24,color:"var(--md-on-surface)",display:"flex",alignItems:"center",gap:12}}>Settings <span style={{fontFamily:"var(--google-sans)",fontSize:12,color:"var(--md-on-surface-variant)",fontWeight:500,padding:"4px 10px",background:"var(--md-surface-container)",borderRadius:999}}>workspace</span></h2>
           <button onClick={onClose} style={{background:"transparent",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-primary)",padding:"8px 14px",transition:"background .2s var(--ease)"}}
@@ -186,7 +186,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
           <div style={{minHeight:300}}>
             {/* ── Profile ── */}
             {tab==="profile"&&<div>
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>Profile</h3>
+              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Profile</h3>
               {[{k:"Display name",f:"display_name",ph:"Your name"},{k:"Email",f:"email",ph:"you@example.com"},{k:"Username",f:"username",ph:"",ro:true}].map(({k,f,ph,ro})=>(
                 <div key={k} style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:24,padding:"16px 0",borderTop:"1px solid var(--md-outline-variant)",alignItems:"center"}}>
                   <span style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface-variant)"}}>{k}</span>
@@ -202,12 +202,12 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
 
             {/* ── Appearance ── */}
             {tab==="appearance"&&<div>
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>Theme</h3>
+              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Theme</h3>
               <div style={{display:"flex",gap:8,marginBottom:24}}>
                 {(["light","dark","system"] as const).map(m=><button key={m} onClick={()=>{setTheme(m);setPref("theme",m);}} style={{flex:1,padding:"10px 0",background:theme===m?"var(--md-primary-container)":"var(--md-surface-container-low)",border:theme===m?"2px solid var(--md-primary)":"2px solid transparent",borderRadius:12,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:theme===m?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",transition:"all .15s var(--ease)"}}>{m==="light"?"Light":m==="dark"?"Dark":"System"}</button>)}
               </div>
 
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>Color Theme</h3>
+              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Color Theme</h3>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:24}}>
                 {VARIANTS.map(v=><button key={v.id} onClick={()=>{setVariant(v.id);setPref("variant",v.id);}} style={{padding:14,background:variant===v.id?"var(--md-primary-container)":"var(--md-surface-container-low)",border:variant===v.id?"2px solid var(--md-primary)":"2px solid transparent",borderRadius:16,cursor:"pointer",textAlign:"left",transition:"all .15s var(--ease)"}}>
                   <div style={{display:"flex",gap:4,marginBottom:8}}>{v.colors.map((c,i)=><span key={i} style={{width:16,height:16,borderRadius:"50%",background:c}}/>)}</div>
@@ -216,17 +216,17 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                 </button>)}
               </div>
 
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>Density</h3>
+              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Density</h3>
               <div style={{display:"flex",gap:8,marginBottom:24}}>
                 {(["comfortable","compact"] as const).map(d=><button key={d} onClick={()=>{setDensity(d);setPref("density",d);}} style={{flex:1,padding:"10px 0",background:density===d?"var(--md-primary-container)":"var(--md-surface-container-low)",border:density===d?"2px solid var(--md-primary)":"2px solid transparent",borderRadius:12,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:density===d?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",transition:"all .15s var(--ease)"}}>{d[0].toUpperCase()+d.slice(1)}</button>)}
               </div>
 
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>Text Size</h3>
+              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Text Size</h3>
               <div style={{display:"flex",gap:8,marginBottom:24}}>
                 {(["small","default","large"] as const).map(s=><button key={s} onClick={()=>{setScale(s);setPref("scale",s);}} style={{flex:1,padding:"10px 0",background:scale===s?"var(--md-primary-container)":"var(--md-surface-container-low)",border:scale===s?"2px solid var(--md-primary)":"2px solid transparent",borderRadius:12,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:s==="small"?12:s==="large"?15:13,fontWeight:500,color:scale===s?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",transition:"all .15s var(--ease)"}}>Aa</button>)}
               </div>
 
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>Motion</h3>
+              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Motion</h3>
               <div style={{display:"flex",gap:8,marginBottom:16}}>
                 {(["standard","reduced","auto"] as const).map(m=><button key={m} onClick={()=>{setMotion(m);setPref("motion",m);}} style={{flex:1,padding:"10px 0",background:motion===m?"var(--md-primary-container)":"var(--md-surface-container-low)",border:motion===m?"2px solid var(--md-primary)":"2px solid transparent",borderRadius:12,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:motion===m?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",transition:"all .15s var(--ease)"}}>{m[0].toUpperCase()+m.slice(1)}</button>)}
               </div>
@@ -274,19 +274,18 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
               </div>
 
               {/* Document list with status chips */}
-              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
-                {pagedDocs.map((d:any)=><div key={d.name} onClick={()=>setSelectedDoc(d.name)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"var(--md-surface-container-low)",borderRadius:12,cursor:"pointer",transition:"background .2s var(--ease)"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
-                  onMouseLeave={e=>e.currentTarget.style.background="var(--md-surface-container-low)"}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</div>
-                    <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)"}}>{d.chunks} chunks</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))",gap:10,marginBottom:16}}>
+                {pagedDocs.map((d:any)=><div key={d.name} onClick={()=>setSelectedDoc(d.name)} style={{padding:"14px",background:"var(--md-surface-container-low)",borderRadius:14,cursor:"pointer",transition:"all .2s var(--ease)",border:"1px solid transparent"}}
+                  onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.borderColor="var(--md-outline-variant)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="transparent";}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                    <StatusChip status="ready"/>
                   </div>
-                  <StatusChip status="ready"/>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--md-on-surface-variant)" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                  <div style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:4}}>{d.name}</div>
+                  <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)"}}>{d.chunks} chunks</div>
                 </div>)}
-                {pagedDocs.length===0&&<p style={{fontFamily:"var(--sans)",fontSize:14,color:"var(--md-on-surface-variant)",textAlign:"center",padding:24}}>{kSearch?"No results.":"No documents yet."}</p>}
+                {pagedDocs.length===0&&<p style={{fontFamily:"var(--sans)",fontSize:14,color:"var(--md-on-surface-variant)",textAlign:"center",padding:24,gridColumn:"1 / -1"}}>{kSearch?"No results.":"No documents yet."}</p>}
               </div>
 
               {/* Pagination */}
@@ -421,7 +420,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
 
             {/* ── Model ── */}
             {tab==="model"&&<div>
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>Model</h3>
+              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Model</h3>
               {[["Active model",health?.model?.replace(".gguf","")||"—","text"],["Temperature",temp,"temp"],["Max tokens",maxT,"tokens"]].map(([k,v,t])=>(
                 <div key={String(k)} style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:24,padding:"16px 0",borderTop:"1px solid var(--md-outline-variant)",alignItems:"center"}}>
                   <span style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface-variant)"}}>{k}</span>
@@ -434,7 +433,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
 
             {/* ── API Keys ── */}
             {tab==="keys"&&<div>
-              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:16}}>API Keys · {keys.filter((k:any)=>k.is_active).length} active</h3>
+              <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>API Keys · {keys.filter((k:any)=>k.is_active).length} active</h3>
               <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
                 {keys.map((k:any)=><div key={k.id} style={{padding:"16px",background:"var(--md-surface-container-low)",borderRadius:16}}>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
