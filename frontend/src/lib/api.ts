@@ -1,9 +1,7 @@
 import { ChatResponse, HealthStatus } from "./types";
 
-// Use /api proxy in production (ngrok), direct in dev
-const API_BASE = typeof window !== "undefined" && window.location.hostname !== "localhost"
-  ? "/api"
-  : "http://localhost:8000";
+// Always use the proxy — works both locally and via ngrok
+const API_BASE = "/api";
 
 function getToken(): string {
   if (typeof window === "undefined") return "";
