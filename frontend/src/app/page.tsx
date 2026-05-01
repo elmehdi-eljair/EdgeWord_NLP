@@ -366,19 +366,17 @@ export default function Home() {
 
   useEffect(() => { setAuthed(api.isLoggedIn()); }, []);
 
-  if (!authed) return <AuthPage onAuth={() => setAuthed(true)} />;
-
-  /* eslint-disable react-hooks/rules-of-hooks */
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, generating]);
 
   useEffect(() => {
+    if (!authed) return;
     const poll = () => api.health().then(setHealth).catch(() => {});
     poll();
     const iv = setInterval(poll, 30000);
     return () => clearInterval(iv);
-  }, []);
+  }, [authed]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -467,6 +465,8 @@ export default function Home() {
   };
 
   const canSend = input.trim() || attachments.length > 0;
+
+  if (!authed) return <AuthPage onAuth={() => setAuthed(true)} />;
 
   return (
     <div className="h-dvh flex flex-col bg-bg">
