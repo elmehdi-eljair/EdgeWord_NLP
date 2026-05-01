@@ -171,6 +171,27 @@ function CodeBlock({code,lang}:{code:string;lang:string}){
   );
 }
 
+/* ── Reasoning Chain (proper component, not IIFE — avoids React hooks error) ── */
+function ReasoningChain({reasoning}:{reasoning:Record<string,string>}){
+  const [expanded,setExpanded]=useState(false);
+  const stages=["analyse","retrieve","reason","synthesise"];
+  const stageLabels:{[k:string]:string}={analyse:"Analyse",retrieve:"Retrieve",reason:"Reason",synthesise:"Synthesise"};
+  return <div style={{margin:"12px 0"}}>
+    <button onClick={()=>setExpanded(!expanded)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"var(--md-primary-container)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-primary-container)",transition:"all .2s var(--ease)"}}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{transform:expanded?"rotate(90deg)":"rotate(0)",transition:"transform .2s"}}><polyline points="9 18 15 12 9 6"/></svg>
+      Reasoning chain · {stages.filter(s=>reasoning[s]).length} stages
+    </button>
+    {expanded&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+      {stages.filter(s=>reasoning[s]).map(s=>(
+        <div key={s} style={{padding:"10px 14px",background:"var(--md-surface-container-low)",borderRadius:10,borderLeft:"3px solid var(--md-primary)"}}>
+          <div style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-primary)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>{stageLabels[s]||s}</div>
+          <div style={{fontFamily:"var(--sans)",fontSize:13,lineHeight:1.6,color:"var(--md-on-surface-variant)",whiteSpace:"pre-wrap"}}>{reasoning[s]}</div>
+        </div>
+      ))}
+    </div>}
+  </div>;
+}
+
 function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}){
   const isError=!isUser&&msg.text.startsWith("Error:");
   const [copied,setCopied]=useState(false);
@@ -228,26 +249,7 @@ function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}
       }
       {msg.toolResult&&<div style={{margin:"12px 0",padding:"12px 16px",background:"var(--md-surface-container)",borderRadius:8,fontFamily:"var(--mono)",fontSize:13,color:"var(--md-on-surface-variant)",border:"1px solid var(--md-outline-variant)"}}>{msg.toolResult}</div>}
       {/* Reasoning chain — collapsible stages */}
-      {msg.reasoning&&Object.keys(msg.reasoning).length>0&&(()=>{
-        const [expanded,setExpanded]=useState(false);
-        const stages=["analyse","retrieve","reason","synthesise"];
-        const stageLabels:{[k:string]:string}={analyse:"Analyse",retrieve:"Retrieve",reason:"Reason",synthesise:"Synthesise"};
-        const stageIcons:{[k:string]:string}={analyse:"search",retrieve:"library",reason:"psychology",synthesise:"edit"};
-        return <div style={{margin:"12px 0"}}>
-          <button onClick={()=>setExpanded(!expanded)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",background:"var(--md-primary-container)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-primary-container)",transition:"all .2s var(--ease)"}}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{transform:expanded?"rotate(90deg)":"rotate(0)",transition:"transform .2s"}}><polyline points="9 18 15 12 9 6"/></svg>
-            Reasoning chain · {Object.keys(msg.reasoning).length} stages
-          </button>
-          {expanded&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
-            {stages.filter(s=>msg.reasoning![s]).map(s=>(
-              <div key={s} style={{padding:"10px 14px",background:"var(--md-surface-container-low)",borderRadius:10,borderLeft:"3px solid var(--md-primary)"}}>
-                <div style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-primary)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>{stageLabels[s]||s}</div>
-                <div style={{fontFamily:"var(--sans)",fontSize:13,lineHeight:1.6,color:"var(--md-on-surface-variant)",whiteSpace:"pre-wrap"}}>{msg.reasoning![s]}</div>
-              </div>
-            ))}
-          </div>}
-        </div>;
-      })()}
+      {msg.reasoning&&Object.keys(msg.reasoning).length>0&&<ReasoningChain reasoning={msg.reasoning}/>}
       {msg.ragSources&&msg.ragSources.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{msg.ragSources.map((s,i)=><span key={i} style={{padding:"4px 10px",background:"var(--md-primary-container)",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-primary-container)"}}>{s}</span>)}</div>}
       {!isError&&msg.tokens!=null&&<div style={{marginTop:8,fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)",opacity:.6}}>{msg.tokens} tok{msg.tps!=null&&` · ${msg.tps.toFixed(1)} t/s`}{msg.cached&&" · cached"}</div>}
       {/* Action icons — copy + re-run */}
