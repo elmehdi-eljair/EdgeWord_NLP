@@ -623,21 +623,23 @@ function Settings({open,onClose,health,onLogout,initialTab="profile",autoModeOn=
                 </div>
 
                 {/* Auto-Mode toggle */}
-                <div style={{padding:14,background:autoModeOn?"var(--md-tertiary-container)":"var(--md-surface-container-low)",borderRadius:12,marginBottom:16,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:"all .2s var(--ease)",border:`1px solid ${autoModeOn?"var(--md-tertiary)":"transparent"}`}}
-                  onClick={()=>setAutoModeOn?.(!autoModeOn)}>
-                  <div style={{width:40,height:40,borderRadius:12,background:autoModeOn?"var(--md-tertiary)":"var(--md-surface-container)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={autoModeOn?"var(--md-on-tertiary)":"var(--md-on-surface-variant)"} strokeWidth="2" strokeLinecap="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
+                <div style={{padding:14,background:autoModeOn?"var(--md-primary-container)":"var(--md-surface-container-low)",borderRadius:12,marginBottom:16,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:"all .2s var(--ease)",border:`1px solid ${autoModeOn?"var(--md-primary)":"transparent"}`}}
+                  onClick={()=>{const next=!autoModeOn;setAutoModeOn?.(next);api.saveSettings({auto_mode:next});}}>
+                  <div style={{width:40,height:40,borderRadius:12,background:autoModeOn?"var(--md-primary)":"var(--md-surface-container)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={autoModeOn?"#fff":"var(--md-on-surface-variant)"} strokeWidth="2" strokeLinecap="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
                   </div>
                   <div style={{flex:1}}>
-                    <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>Auto-Mode</div>
-                    <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)"}}>Automatically select optimal parameters for each message</div>
+                    <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>Auto-Mode {autoModeOn&&<span style={{fontFamily:"var(--google-sans)",fontSize:11,color:"var(--md-primary)",fontWeight:500}}>ON</span>}</div>
+                    <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)"}}>{autoModeOn?"Parameters auto-selected per message":"Manually configure parameters below"}</div>
                   </div>
-                  <div style={{width:44,height:24,borderRadius:12,background:autoModeOn?"var(--md-tertiary)":"var(--md-outline)",padding:2,cursor:"pointer",transition:"all .2s var(--ease)"}}>
+                  <div style={{width:44,height:24,borderRadius:12,background:autoModeOn?"var(--md-primary)":"var(--md-outline)",padding:2,cursor:"pointer",transition:"all .2s var(--ease)"}}>
                     <div style={{width:20,height:20,borderRadius:10,background:"#fff",transform:autoModeOn?"translateX(20px)":"translateX(0)",transition:"transform .2s var(--ease)"}}/>
                   </div>
                 </div>
 
-                {/* System Prompt */}
+                {/* System Prompt + Parameters (disabled when auto-mode) */}
+                <div style={{opacity:autoModeOn?.4:1,pointerEvents:autoModeOn?"none":"auto",transition:"opacity .2s var(--ease)"}}>
+                {autoModeOn&&<div style={{padding:"8px 14px",background:"var(--md-primary-container)",borderRadius:8,marginBottom:12,fontFamily:"var(--google-sans)",fontSize:12,color:"var(--md-on-primary-container)"}}>Parameters are auto-managed. Disable Auto-Mode to edit manually.</div>}
                 <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:8}}>System Prompt</h4>
                 <textarea value={sysPrompt} onChange={e=>setSysPrompt(e.target.value)} rows={3}
                   style={{width:"100%",padding:"12px 14px",background:"var(--md-surface-container-low)",border:"1px solid transparent",borderRadius:12,fontFamily:"var(--sans)",fontSize:13,color:"var(--md-on-surface)",outline:"none",resize:"vertical",lineHeight:1.6,marginBottom:16,transition:"all .2s var(--ease)"}}
@@ -676,6 +678,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile",autoModeOn=
                   <button onClick={()=>{if(!scenarioName.trim())return;setCustomScenarios(p=>[...p,{id:uid(),name:scenarioName.trim(),temp,maxT,ctx:ctxWin,topP,topK,rep:repPen,prompt:sysPrompt}]);setScenarioName("");}}
                     style={{padding:"10px 16px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:13,whiteSpace:"nowrap"}}>Save</button>
                 </div>
+                </div>{/* close auto-mode disabled wrapper */}
               </div>}
 
               {/* ── Scenarios ── */}
@@ -840,7 +843,8 @@ export default function Home(){
   const [lastSum,setLastSum]=useState(0);
   const [recording,setRecording]=useState(false);
   const [chatFiles,setChatFiles]=useState<File[]>([]);
-  const [autoModeOn,setAutoModeOn]=useState(false);
+  const [autoModeOn,_setAutoMode]=useState(false);
+  const setAutoModeOn=(v:boolean)=>{_setAutoMode(v);localStorage.setItem("edgeword.auto_mode",v?"true":"false");};
   const [reasoningOn,setReasoningOn]=useState(false);
   const chatFileRef=useRef<HTMLInputElement>(null);
   const scrollRef=useRef<HTMLDivElement>(null);
@@ -849,7 +853,7 @@ export default function Home(){
   const fileRef=useRef<HTMLInputElement>(null);
   const [showScrollBtn,setShowScrollBtn]=useState(false);
 
-  useEffect(()=>{setAuthed(api.isLoggedIn());},[]);
+  useEffect(()=>{setAuthed(api.isLoggedIn());_setAutoMode(localStorage.getItem("edgeword.auto_mode")==="true");},[]);
   const scrollToBottom=useCallback(()=>window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"}),[]);
   useEffect(()=>{scrollToBottom();},[messages,generating,scrollToBottom]);
   useEffect(()=>{

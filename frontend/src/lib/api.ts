@@ -219,7 +219,11 @@ export async function chatReason(
   onEvent: (event: any) => void,
   opts: { useRag?: boolean } = {}
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/v1/chat/reason`, {
+  // SSE must bypass proxy — detect backend URL for direct connection
+  const sseBase = typeof window !== "undefined"
+    ? (window.location.hostname === "localhost" ? "http://localhost:8000" : `${window.location.origin}/api`)
+    : "http://localhost:8000";
+  const res = await fetch(`${sseBase}/v1/chat/reason`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
