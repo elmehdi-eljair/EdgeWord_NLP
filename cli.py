@@ -100,7 +100,7 @@ class ComputePath:
 
         self.llm = Llama(
             model_path=model_path,
-            n_ctx=2048,
+            n_ctx=4096,
             n_threads=n_threads,
             n_gpu_layers=0,
             verbose=False,
@@ -120,7 +120,13 @@ class ComputePath:
 
     def _build_prompt(self, user_message: str) -> str:
         """Build a prompt that includes conversation history from LangChain memory."""
-        prompt = "<|im_start|>system\nYou are a helpful assistant. Be concise and clear.<|im_end|>\n"
+        prompt = (
+            "<|im_start|>system\n"
+            "You are EdgeWord Assistant, a helpful AI running locally on CPU with no cloud dependencies. "
+            "Be concise and clear. "
+            "Pay close attention to the conversation history below — if the user refers to something said earlier, "
+            "use the history to answer accurately.<|im_end|>\n"
+        )
 
         # Inject past conversation turns from memory
         for human_msg, ai_msg in self.history[-self.memory_k:]:
@@ -269,7 +275,7 @@ def main() -> None:
     parser.add_argument("--model", type=str, help="Path to GGUF model for generation")
     parser.add_argument("--fast-only", action="store_true", help="Classification only, skip generation")
     parser.add_argument("--threads", type=int, default=4, help="Thread count for generation (default: 4)")
-    parser.add_argument("--memory", type=int, default=10, help="Number of conversation turns to remember (default: 10)")
+    parser.add_argument("--memory", type=int, default=50, help="Number of conversation turns to remember (default: 50)")
     args = parser.parse_args()
 
     # --- Load backends ---
