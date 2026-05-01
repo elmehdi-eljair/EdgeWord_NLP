@@ -622,6 +622,21 @@ function Settings({open,onClose,health,onLogout,initialTab="profile"}:{open:bool
                   <StatusChip status="ready"/>
                 </div>
 
+                {/* Auto-Mode toggle */}
+                <div style={{padding:14,background:autoModeOn?"var(--md-tertiary-container)":"var(--md-surface-container-low)",borderRadius:12,marginBottom:16,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:"all .2s var(--ease)",border:`1px solid ${autoModeOn?"var(--md-tertiary)":"transparent"}`}}
+                  onClick={()=>setAutoModeOn(!autoModeOn)}>
+                  <div style={{width:40,height:40,borderRadius:12,background:autoModeOn?"var(--md-tertiary)":"var(--md-surface-container)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={autoModeOn?"var(--md-on-tertiary)":"var(--md-on-surface-variant)"} strokeWidth="2" strokeLinecap="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>Auto-Mode</div>
+                    <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)"}}>Automatically select optimal parameters for each message</div>
+                  </div>
+                  <div style={{width:44,height:24,borderRadius:12,background:autoModeOn?"var(--md-tertiary)":"var(--md-outline)",padding:2,cursor:"pointer",transition:"all .2s var(--ease)"}}>
+                    <div style={{width:20,height:20,borderRadius:10,background:"#fff",transform:autoModeOn?"translateX(20px)":"translateX(0)",transition:"transform .2s var(--ease)"}}/>
+                  </div>
+                </div>
+
                 {/* System Prompt */}
                 <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:8}}>System Prompt</h4>
                 <textarea value={sysPrompt} onChange={e=>setSysPrompt(e.target.value)} rows={3}
@@ -997,17 +1012,13 @@ export default function Home(){
             placeholder="Message EdgeWord..."
             rows={1} style={{flex:1,background:"transparent",border:0,outline:0,resize:"none",fontFamily:"var(--sans)",fontSize:15,lineHeight:1.5,color:"var(--md-on-surface)",fontWeight:400,minHeight:24,maxHeight:200,padding:"8px 0"}}/>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            {/* Auto-mode toggle */}
-            <button onClick={()=>setAutoModeOn(!autoModeOn)} title={autoModeOn?"Auto-mode ON":"Auto-mode OFF"}
-              style={{height:28,padding:"0 10px",borderRadius:999,background:autoModeOn?"var(--md-tertiary-container)":"transparent",border:`1px solid ${autoModeOn?"var(--md-tertiary)":"var(--md-outline)"}`,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:autoModeOn?"var(--md-tertiary)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",gap:5,transition:"all .2s var(--ease)",whiteSpace:"nowrap"}}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
-              Auto
-            </button>
-            {/* Reasoning toggle */}
-            <button onClick={()=>setReasoningOn(!reasoningOn)} title={reasoningOn?"Reasoning ON":"Reasoning OFF"}
-              style={{height:28,padding:"0 10px",borderRadius:999,background:reasoningOn?"var(--md-primary-container)":"transparent",border:`1px solid ${reasoningOn?"var(--md-primary)":"var(--md-outline)"}`,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:reasoningOn?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",gap:5,transition:"all .2s var(--ease)",whiteSpace:"nowrap"}}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              Reason
+            {/* Reasoning toggle — icon only, like attach/voice */}
+            <button onClick={()=>setReasoningOn(!reasoningOn)} title={reasoningOn?"Reasoning ON — click to disable":"Enable deep reasoning"}
+              style={{width:36,height:36,borderRadius:"50%",background:reasoningOn?"var(--md-primary-container)":"transparent",border:0,cursor:"pointer",color:reasoningOn?"var(--md-primary)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
+              onMouseEnter={e=>{if(!reasoningOn)e.currentTarget.style.background="var(--md-surface-container-high)";}}
+              onMouseLeave={e=>{if(!reasoningOn)e.currentTarget.style.background="transparent";}}>
+              {/* Brain/reasoning icon */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a4 4 0 0 0-4 4c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2 4 4 0 0 0-4-4z"/><path d="M12 8v8"/><path d="M8 12h8"/><circle cx="12" cy="19" r="2"/><path d="M12 16v1"/><path d="M6 6a6 6 0 0 0 0 12"/><path d="M18 6a6 6 0 0 1 0 12"/></svg>
             </button>
             <button onClick={()=>fileRef.current?.click()} title="attach" style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
               onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
