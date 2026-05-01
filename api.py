@@ -1,0 +1,423 @@
+"""
+EdgeWord NLP — REST API Server
+FastAPI endpoints with API key authentication, structured JSON responses.
+
+Usage:
+    # Create an API key first:
+    .venv/bin/python3 api_keys.py create --name "my-app"
+
+    # Start the server:
+    .venv/bin/python3 api.py
+    .venv/bin/python3 api.py --port 8080 --threads 4
+
+    # Call the API:
+    curl -H "Authorization: Bearer ew_..." http://localhost:8000/v1/chat \
+         -H "Content-Type: application/json" \
+         -d '{"message": "What is CPU inference?"}'
+"""
+
+import argparse
+import os
+import sys
+import json
+import time
+from pathlib import Path
+from contextlib import asynccontextmanager
+
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+# --- Request/Response models ---
+
+class SentimentResult(BaseModel):
+    label: str
+    confidence: float
+    scores: dict[str, float]
+    latency_ms: float
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., description="User message")
+    max_tokens: int = Field(256, ge=1, le=2048, description="Max tokens to generate")
+    temperature: float = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
+    session_id: str = Field("default", description="Session ID for conversation memory")
+    use_rag: bool = Field(True, description="Enable RAG context retrieval")
+    use_tools: bool = Field(True, description="Enable auto-tools")
+    use_cache: bool = Field(True, description="Enable response cache")
+
+class ChatResponse(BaseModel):
+    response: str
+    sentiment: SentimentResult | None = None
+    tool_result: str | None = None
+    rag_sources: list[str] = []
+    tokens: int = 0
+    tps: float = 0.0
+    ttft_s: float = 0.0
+    total_s: float = 0.0
+    cached: bool = False
+    session_id: str = "default"
+
+class ClassifyRequest(BaseModel):
+    text: str = Field(..., description="Text to classify")
+
+class ClassifyBatchRequest(BaseModel):
+    texts: list[str] = Field(..., description="List of texts to classify")
+
+class ClassifyResponse(BaseModel):
+    result: SentimentResult
+
+class ClassifyBatchResponse(BaseModel):
+    results: list[SentimentResult]
+    total_ms: float
+
+class HealthResponse(BaseModel):
+    status: str
+    fast_path: bool
+    compute_path: bool
+    rag_chunks: int
+    cache_entries: int
+    model: str | None
+    uptime_s: float
+
+class KeyUsageResponse(BaseModel):
+    name: str
+    total_requests: int
+    total_tokens: int
+    rate_limit: int
+    active: bool
+
+# --- Globals (loaded at startup) ---
+fast_path = None
+compute_path = None
+rag_engine = None
+response_cache = None
+auto_tools = None
+key_manager = None
+sessions = {}  # session_id -> conversation history
+start_time = None
+
+
+def get_session(session_id: str):
+    """Get or create a conversation session."""
+    if session_id not in sessions:
+        from langchain_core.messages import HumanMessage, AIMessage
+        sessions[session_id] = []
+    return sessions[session_id]
+
+
+# --- Auth ---
+security = HTTPBearer()
+
+
+async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Validate API key from Authorization header."""
+    key = credentials.credentials
+    result = key_manager.validate_key(key)
+    if result is None:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    if "error" in result:
+        if result["error"] == "rate_limited":
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded. Retry after {result.get('retry_after', 60)}s",
+            )
+    return {"key": key, **result}
+
+
+# --- Lifespan ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global fast_path, compute_path, rag_engine, response_cache, auto_tools, key_manager, start_time
+    import numpy as np
+    import onnxruntime as ort
+    from transformers import AutoTokenizer
+    from huggingface_hub import snapshot_download
+    from api_keys import APIKeyManager
+
+    start_time = time.time()
+    print("\n=== EdgeWord NLP API Server ===\n")
+
+    # Fast-Path
+    from cli import FastPath
+    fast_path = FastPath()
+
+    # Compute-Path
+    models_dir = Path(__file__).parent / "models"
+    ggufs = sorted(models_dir.glob("*.gguf")) if models_dir.exists() else []
+    if ggufs:
+        from cli import ComputePath
+        threads = int(os.environ.get("EDGEWORD_THREADS", "4"))
+        compute_path = ComputePath(str(ggufs[0]), n_threads=threads, memory_k=50)
+
+    # RAG
+    docs_dir = Path(__file__).parent / "docs"
+    if docs_dir.exists() and any(docs_dir.rglob("*")):
+        from rag import RAGEngine
+        rag_engine = RAGEngine()
+        rag_engine.load_directory(str(docs_dir))
+
+    # Cache
+    from cache import ResponseCache
+    response_cache = ResponseCache(enabled=True)
+
+    # Tools
+    from tools import AutoTools
+    auto_tools = AutoTools(base_dir=str(Path(__file__).parent))
+
+    # API Keys
+    key_manager = APIKeyManager()
+
+    print(f"\nServer ready. Components loaded:")
+    print(f"  Fast-Path:    ready")
+    print(f"  Compute-Path: {'ready' if compute_path else 'disabled'}")
+    print(f"  RAG:          {rag_engine.doc_count if rag_engine else 0} chunks")
+    print(f"  Cache:        {response_cache.stats()['entries']} entries")
+    print(f"  API Keys:     {len([k for k in key_manager.list_keys() if k['is_active']])} active\n")
+
+    yield
+
+    # Cleanup
+    if response_cache:
+        response_cache.close()
+    if key_manager:
+        key_manager.close()
+
+
+# --- App ---
+app = FastAPI(
+    title="EdgeWord NLP API",
+    description="CPU-native NLP pipeline — classification + generation + RAG",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --- Endpoints ---
+
+@app.get("/v1/health", response_model=HealthResponse)
+async def health():
+    """Health check — no auth required."""
+    return HealthResponse(
+        status="healthy",
+        fast_path=fast_path is not None,
+        compute_path=compute_path is not None,
+        rag_chunks=rag_engine.doc_count if rag_engine else 0,
+        cache_entries=response_cache.stats()["entries"] if response_cache else 0,
+        model=os.path.basename(compute_path.model_path) if compute_path else None,
+        uptime_s=round(time.time() - start_time, 1),
+    )
+
+
+@app.post("/v1/classify", response_model=ClassifyResponse)
+async def classify(req: ClassifyRequest, auth: dict = Depends(verify_api_key)):
+    """Classify sentiment of a single text."""
+    import numpy as np
+
+    t0 = time.perf_counter()
+    label, confidence, probs = fast_path._infer(req.text)
+    ms = (time.perf_counter() - t0) * 1000
+
+    scores = {fast_path.id2label.get(i, str(i)): float(p) for i, p in enumerate(probs)}
+
+    key_manager.log_usage(auth["key"], "/v1/classify", tokens=0, latency_ms=ms)
+
+    return ClassifyResponse(
+        result=SentimentResult(
+            label=label,
+            confidence=confidence,
+            scores=scores,
+            latency_ms=round(ms, 2),
+        )
+    )
+
+
+@app.post("/v1/classify/batch", response_model=ClassifyBatchResponse)
+async def classify_batch(req: ClassifyBatchRequest, auth: dict = Depends(verify_api_key)):
+    """Classify sentiment of multiple texts."""
+    t0 = time.perf_counter()
+    results = []
+    for text in req.texts:
+        t1 = time.perf_counter()
+        label, confidence, probs = fast_path._infer(text)
+        ms = (time.perf_counter() - t1) * 1000
+        scores = {fast_path.id2label.get(i, str(i)): float(p) for i, p in enumerate(probs)}
+        results.append(SentimentResult(
+            label=label, confidence=confidence, scores=scores, latency_ms=round(ms, 2)
+        ))
+
+    total_ms = (time.perf_counter() - t0) * 1000
+    key_manager.log_usage(auth["key"], "/v1/classify/batch", tokens=0, latency_ms=total_ms)
+
+    return ClassifyBatchResponse(results=results, total_ms=round(total_ms, 2))
+
+
+@app.post("/v1/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
+    """Chat with the LLM — includes RAG, tools, cache, and conversation memory."""
+    if compute_path is None:
+        raise HTTPException(status_code=503, detail="Compute-Path not available — no GGUF model loaded")
+
+    t_total = time.perf_counter()
+
+    # Classify sentiment
+    t0 = time.perf_counter()
+    label, confidence, probs = fast_path._infer(req.message)
+    cls_ms = (time.perf_counter() - t0) * 1000
+    scores = {fast_path.id2label.get(i, str(i)): float(p) for i, p in enumerate(probs)}
+    sentiment = SentimentResult(label=label, confidence=confidence, scores=scores, latency_ms=round(cls_ms, 2))
+
+    # Auto-tools
+    tool_result = ""
+    if req.use_tools and auto_tools:
+        result = auto_tools.run(req.message)
+        if result:
+            tool_result = result
+
+    # RAG retrieval
+    rag_context = ""
+    rag_sources = []
+    if req.use_rag and rag_engine:
+        results = rag_engine.retrieve(req.message, top_k=3)
+        if results and results[0]["score"] > 0.3:
+            rag_context = rag_engine.format_context(results)
+            rag_sources = list(set(r["source"] for r in results))
+
+    # Cache check
+    if req.use_cache and response_cache:
+        cached = response_cache.get(req.message)
+        if cached:
+            total_s = time.perf_counter() - t_total
+            key_manager.log_usage(auth["key"], "/v1/chat", tokens=0, latency_ms=total_s * 1000)
+            # Save to session memory
+            session = get_session(req.session_id)
+            from langchain_core.messages import HumanMessage, AIMessage
+            session.append((HumanMessage(content=req.message), AIMessage(content=cached)))
+            return ChatResponse(
+                response=cached,
+                sentiment=sentiment,
+                tool_result=tool_result or None,
+                rag_sources=rag_sources,
+                tokens=0, tps=0, ttft_s=0,
+                total_s=round(total_s, 3),
+                cached=True,
+                session_id=req.session_id,
+            )
+
+    # Build prompt with session memory
+    session = get_session(req.session_id)
+    old_history = compute_path.history
+    compute_path.history = session
+
+    # Generate (capture output instead of printing)
+    prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result)
+
+    first_token_time = None
+    token_count = 0
+    response_parts = []
+    t0 = time.perf_counter()
+
+    stream = compute_path.llm.create_completion(
+        prompt,
+        max_tokens=req.max_tokens,
+        stream=True,
+        echo=False,
+        temperature=req.temperature,
+    )
+
+    for chunk in stream:
+        tok = chunk["choices"][0]["text"]
+        if "<|im_end|>" in tok or "<|eot_id|>" in tok:
+            break
+        if first_token_time is None:
+            first_token_time = time.perf_counter() - t0
+        token_count += 1
+        response_parts.append(tok)
+
+    gen_total = time.perf_counter() - t0
+    tps = token_count / gen_total if gen_total > 0 else 0
+    ttft = first_token_time if first_token_time is not None else gen_total
+    response_text = "".join(response_parts).strip()
+
+    # Save to session memory
+    from langchain_core.messages import HumanMessage, AIMessage
+    session.append((HumanMessage(content=req.message), AIMessage(content=response_text)))
+    compute_path.history = old_history
+
+    # Cache store
+    if req.use_cache and response_cache and response_text:
+        response_cache.put(req.message, response_text)
+
+    total_s = time.perf_counter() - t_total
+    key_manager.log_usage(auth["key"], "/v1/chat", tokens=token_count, latency_ms=total_s * 1000)
+
+    return ChatResponse(
+        response=response_text,
+        sentiment=sentiment,
+        tool_result=tool_result or None,
+        rag_sources=rag_sources,
+        tokens=token_count,
+        tps=round(tps, 1),
+        ttft_s=round(ttft, 3),
+        total_s=round(total_s, 3),
+        cached=False,
+        session_id=req.session_id,
+    )
+
+
+@app.delete("/v1/sessions/{session_id}")
+async def clear_session(session_id: str, auth: dict = Depends(verify_api_key)):
+    """Clear conversation memory for a session."""
+    if session_id in sessions:
+        del sessions[session_id]
+        return {"status": "cleared", "session_id": session_id}
+    return {"status": "not_found", "session_id": session_id}
+
+
+@app.get("/v1/sessions")
+async def list_sessions(auth: dict = Depends(verify_api_key)):
+    """List active conversation sessions."""
+    return {
+        "sessions": [
+            {"session_id": sid, "turns": len(hist)}
+            for sid, hist in sessions.items()
+        ]
+    }
+
+
+@app.get("/v1/keys/usage", response_model=KeyUsageResponse)
+async def key_usage(auth: dict = Depends(verify_api_key)):
+    """Get usage stats for the current API key."""
+    return KeyUsageResponse(
+        name=auth["name"],
+        total_requests=auth["total_requests"],
+        total_tokens=auth["total_tokens"],
+        rate_limit=auth["rate_limit"],
+        active=bool(auth["is_active"]),
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="EdgeWord NLP API Server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+    parser.add_argument("--threads", type=int, default=4, help="LLM thread count (default: 4)")
+    args = parser.parse_args()
+
+    os.environ["EDGEWORD_THREADS"] = str(args.threads)
+
+    import uvicorn
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
+if __name__ == "__main__":
+    main()
