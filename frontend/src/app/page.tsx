@@ -127,19 +127,35 @@ function AsstAvatar(){
 
 /* ── Message ── */
 function Msg({msg,isUser}:{msg:Message;isUser:boolean}){
+  const isError=!isUser&&msg.text.startsWith("Error:");
   return(
     <article style={{position:"relative",padding:`0 0 var(--message-pad-y)`,paddingLeft:48,animation:"settle .35s var(--ease-emph) both"}}>
-      <span style={{position:"absolute",left:0,top:0}}>{isUser?<UserAvatar/>:<AsstAvatar/>}</span>
+      <span style={{position:"absolute",left:0,top:0}}>{isUser?<UserAvatar/>:isError?
+        <div style={{width:"var(--avatar-size)",height:"var(--avatar-size)",borderRadius:"50%",background:"var(--md-error-container)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--md-error)" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+      :<AsstAvatar/>}</span>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-        <span style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,color:"var(--md-on-surface)"}}>{isUser?"You":"EdgeWord"}</span>
+        <span style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,color:isError?"var(--md-error)":"var(--md-on-surface)"}}>{isUser?"You":isError?"Error":"EdgeWord"}</span>
         <span style={{fontFamily:"var(--google-sans)",fontSize:12,color:"var(--md-on-surface-variant)",fontWeight:400}}>{fmtTime(msg.timestamp)}</span>
+        {isError&&<button onClick={()=>customAlert(msg.text)} title="View error details" style={{width:28,height:28,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-error)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
+          onMouseEnter={e=>e.currentTarget.style.background="var(--md-error-container)"}
+          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>}
       </div>
-      <div style={{fontFamily:"var(--sans)",fontSize:15.5,lineHeight:1.6,color:"var(--md-on-surface-variant)",fontWeight:400,maxWidth:"62ch"}}>
-        {msg.text.split("\n").map((p,i)=><p key={i} style={{marginBottom:p?".85em":0}}>{p}</p>)}
-      </div>
+      {isError?
+        <div style={{padding:"12px 16px",background:"var(--md-error-container)",borderRadius:12,fontFamily:"var(--sans)",fontSize:14,color:"var(--md-on-error-container)",lineHeight:1.5}}>
+          Something went wrong. Tap the info icon for details.
+        </div>
+      :
+        <div style={{fontFamily:"var(--sans)",fontSize:15.5,lineHeight:1.6,color:"var(--md-on-surface-variant)",fontWeight:400,maxWidth:"62ch"}}>
+          {msg.text.split("\n").map((p,i)=><p key={i} style={{marginBottom:p?".85em":0}}>{p}</p>)}
+        </div>
+      }
       {msg.toolResult&&<div style={{margin:"12px 0",padding:"12px 16px",background:"var(--md-surface-container)",borderRadius:8,fontFamily:"var(--mono)",fontSize:13,color:"var(--md-on-surface-variant)",border:"1px solid var(--md-outline-variant)"}}>{msg.toolResult}</div>}
       {msg.ragSources&&msg.ragSources.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{msg.ragSources.map((s,i)=><span key={i} style={{padding:"4px 10px",background:"var(--md-primary-container)",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-primary-container)"}}>{s}</span>)}</div>}
-      {msg.tokens!=null&&<div style={{marginTop:8,fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)",opacity:.6}}>{msg.tokens} tok{msg.tps!=null&&` · ${msg.tps.toFixed(1)} t/s`}{msg.cached&&" · cached"}</div>}
+      {!isError&&msg.tokens!=null&&<div style={{marginTop:8,fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)",opacity:.6}}>{msg.tokens} tok{msg.tps!=null&&` · ${msg.tps.toFixed(1)} t/s`}{msg.cached&&" · cached"}</div>}
     </article>
   );
 }
