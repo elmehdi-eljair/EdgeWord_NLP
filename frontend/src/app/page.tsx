@@ -371,8 +371,8 @@ function Settings({open,onClose,health,onLogout,initialTab="profile",autoModeOn=
             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>Close</button>
         </header>
 
-        <div style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:32}}>
-          <div style={{display:"flex",flexDirection:"column",gap:2}}>
+        <div className="settings-layout" style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:32}}>
+          <div className="settings-tabs" style={{display:"flex",flexDirection:"column",gap:2}}>
             {tabs.map(t=>{const isActive=tab===t.id||(t.id==="knowledge-full"&&(tab==="knowledge-gallery"||selectedDoc));return<button key={t.id} onClick={()=>{setTab(t.id);setSelectedDoc(null);}} style={{textAlign:"left",background:isActive?"var(--md-primary-container)":"transparent",border:0,cursor:"pointer",padding:"10px 16px",borderRadius:999,fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,color:isActive?"var(--md-on-primary-container)":"var(--md-on-surface-variant)",letterSpacing:".01em",transition:"background .2s var(--ease)"}}>{t.label}</button>;})}
           </div>
 
@@ -381,7 +381,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile",autoModeOn=
             {tab==="profile"&&<div>
               <h3 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Profile</h3>
               {[{k:"Display name",f:"display_name",ph:"Your name"},{k:"Email",f:"email",ph:"you@example.com"},{k:"Username",f:"username",ph:"",ro:true}].map(({k,f,ph,ro})=>(
-                <div key={k} style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:24,padding:"16px 0",borderTop:"1px solid var(--md-outline-variant)",alignItems:"center"}}>
+                <div key={k} style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:24,padding:"16px 0",borderTop:"1px solid var(--md-outline-variant)",alignItems:"center"}} className="settings-row">
                   <span style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-surface-variant)"}}>{k}</span>
                   <input key={`${f}-${profile[f]||""}`} defaultValue={profile[f]||""} placeholder={ph} readOnly={!!ro}
                     onBlur={e=>{if(!ro)saveP(f,e.target.value);}}
@@ -859,6 +859,9 @@ export default function Home(){
   const setAutoModeOn=(v:boolean)=>{_setAutoMode(v);localStorage.setItem("edgeword.auto_mode",v?"true":"false");};
   const [reasoningOn,setReasoningOn]=useState(false);
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
+  const [searchOpen,setSearchOpen]=useState(false);
+  const [searchQuery,setSearchQuery]=useState("");
+  const searchRef=useRef<HTMLInputElement>(null);
   const [mobileActionsOpen,setMobileActionsOpen]=useState(false);
   const chatFileRef=useRef<HTMLInputElement>(null);
   const imgRef=useRef<HTMLInputElement>(null);
@@ -1004,12 +1007,94 @@ export default function Home(){
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
           Refresh
         </span>
+        {/* Search button */}
+        <button onClick={()=>{setSearchOpen(true);setTimeout(()=>searchRef.current?.focus(),100);}} style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
+          onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-low)"}
+          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
         {/* Mobile: menu button that opens a bottom sheet with all actions */}
         <button onClick={()=>setMobileMenuOpen(!mobileMenuOpen)} className="hide-desktop" style={{width:36,height:36,borderRadius:"50%",background:"var(--md-surface-container)",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <span onClick={()=>openSettings("profile")} style={{width:36,height:36,borderRadius:"50%",background:"var(--md-primary)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:15,color:"var(--md-on-primary)",cursor:"pointer",boxShadow:"0 1px 2px 0 var(--md-shadow),0 1px 3px 1px var(--md-shadow-2)",transition:"box-shadow .2s var(--ease)"}}>M</span>
       </div>
+
+      {/* Search overlay */}
+      {searchOpen&&<div style={{position:"fixed",inset:0,zIndex:70,background:"color-mix(in srgb, var(--md-surface) 95%, transparent)",backdropFilter:"blur(20px)",display:"flex",flexDirection:"column",padding:"16px"}}>
+        <div style={{maxWidth:640,width:"100%",margin:"0 auto"}}>
+          {/* Search input */}
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+            <button onClick={()=>{setSearchOpen(false);setSearchQuery("");}} style={{width:40,height:40,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+            </button>
+            <div style={{flex:1,position:"relative"}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--md-on-surface-variant)" strokeWidth="2" strokeLinecap="round" style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)"}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input ref={searchRef} value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search conversation..."
+                style={{width:"100%",padding:"14px 14px 14px 44px",background:"var(--md-surface-container)",border:"2px solid var(--md-primary)",borderRadius:28,fontFamily:"var(--sans)",fontSize:16,color:"var(--md-on-surface)",outline:"none"}}
+                onKeyDown={e=>{if(e.key==="Escape"){setSearchOpen(false);setSearchQuery("");}}}/>
+            </div>
+          </div>
+
+          {/* Search results */}
+          <div style={{overflowY:"auto",maxHeight:"calc(100vh - 100px)"}}>
+            {searchQuery.length>1&&(()=>{
+              const q=searchQuery.toLowerCase();
+              const results=messages.filter(m=>m.text.toLowerCase().includes(q)).map((m,idx)=>{
+                const msgIdx=messages.indexOf(m);
+                const preview=m.text.substring(Math.max(0,m.text.toLowerCase().indexOf(q)-30),m.text.toLowerCase().indexOf(q)+60);
+                return {m,msgIdx,preview};
+              });
+              const sectionResults=sections.filter(s=>s.title.toLowerCase().includes(q));
+              return <>
+                {sectionResults.length>0&&<>
+                  <div style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-surface-variant)",textTransform:"uppercase",letterSpacing:".08em",padding:"8px 0",marginBottom:4}}>Chronicles</div>
+                  {sectionResults.map(s=>(
+                    <button key={s.id} onClick={()=>{setSearchOpen(false);setSearchQuery("");const el=document.getElementById(`section-${s.messageIndex}`);if(el)el.scrollIntoView({behavior:"smooth",block:"start"});}}
+                      style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px 16px",background:"transparent",border:0,borderRadius:16,cursor:"pointer",textAlign:"left",transition:"background .2s var(--ease)",marginBottom:4}}
+                      onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-low)"}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--md-primary)" strokeWidth="2" strokeLinecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                      <div>
+                        <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>{s.title}</div>
+                        <div style={{fontFamily:"var(--google-sans)",fontSize:11,color:"var(--md-on-surface-variant)"}}>{fmtTime(s.timestamp)}</div>
+                      </div>
+                    </button>
+                  ))}
+                </>}
+                {results.length>0&&<>
+                  <div style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-surface-variant)",textTransform:"uppercase",letterSpacing:".08em",padding:"8px 0",marginTop:8,marginBottom:4}}>Messages ({results.length})</div>
+                  {results.slice(0,20).map(({m,msgIdx,preview})=>(
+                    <button key={m.id} onClick={()=>{setSearchOpen(false);setSearchQuery("");window.scrollTo({top:document.body.scrollHeight*(msgIdx/messages.length),behavior:"smooth"});}}
+                      style={{display:"flex",alignItems:"flex-start",gap:12,width:"100%",padding:"12px 16px",background:"transparent",border:0,borderRadius:16,cursor:"pointer",textAlign:"left",transition:"background .2s var(--ease)",marginBottom:4}}
+                      onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-low)"}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <div style={{width:28,height:28,borderRadius:"50%",background:m.role==="user"?"var(--md-primary)":"var(--md-surface-container-high)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
+                        {m.role==="user"?<span style={{fontFamily:"var(--google-sans)",fontSize:11,color:"var(--md-on-primary)",fontWeight:500}}>U</span>
+                        :<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--md-on-surface-variant)" strokeWidth="2" strokeLinecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg>}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:"var(--google-sans)",fontSize:12,color:"var(--md-on-surface-variant)",marginBottom:4}}>{m.role==="user"?"You":"EdgeWord"} · {fmtTime(m.timestamp)}</div>
+                        <div style={{fontFamily:"var(--sans)",fontSize:13,color:"var(--md-on-surface)",lineHeight:1.5,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical" as any}}>
+                          ...{preview}...
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </>}
+                {results.length===0&&sectionResults.length===0&&(
+                  <div style={{textAlign:"center",padding:40,color:"var(--md-on-surface-variant)",fontFamily:"var(--sans)",fontSize:14}}>No results for "{searchQuery}"</div>
+                )}
+              </>;
+            })()}
+            {searchQuery.length<=1&&<div style={{textAlign:"center",padding:60,color:"var(--md-on-surface-variant)"}}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{margin:"0 auto 12px",opacity:.4}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500}}>Search your conversation</div>
+              <div style={{fontFamily:"var(--sans)",fontSize:13,marginTop:4}}>Find messages, chronicles, and topics</div>
+            </div>}
+          </div>
+        </div>
+      </div>}
 
       {/* Mobile menu — bottom sheet */}
       {mobileMenuOpen&&<>
@@ -1126,7 +1211,7 @@ export default function Home(){
               </button>
             </div>
             <button onClick={()=>send()} disabled={!input.trim()&&!chatFiles.length} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px",background:(input.trim()||chatFiles.length)?"var(--md-primary)":"var(--md-surface-container-high)",color:(input.trim()||chatFiles.length)?"var(--md-on-primary)":"var(--md-on-surface-variant)",border:0,borderRadius:999,cursor:(input.trim()||chatFiles.length)?"pointer":"default",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,letterSpacing:".01em",transition:"all .2s var(--ease)",boxShadow:(input.trim()||chatFiles.length)?`0 1px 2px 0 var(--md-shadow),0 1px 3px 1px var(--md-shadow-2)`:"none"}}>
-              Send
+              <span className="hide-mobile">Send</span>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a1 1 0 0 0-1.39 1.18L4.5 11l8 1-8 1-2.49 6.22a1 1 0 0 0 1.39 1.18z"/></svg>
             </button>
           </div>

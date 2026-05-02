@@ -212,6 +212,14 @@
   .hide-desktop{display:none!important}
 }
 
+/* Settings responsive */
+@media(max-width:767px){
+  .settings-layout { grid-template-columns: 1fr !important; gap: 16px !important; }
+  .settings-tabs { flex-direction: row !important; overflow-x: auto !important; gap: 4px !important; padding-bottom: 8px !important; -webkit-overflow-scrolling: touch; }
+  .settings-tabs button { white-space: nowrap !important; padding: 8px 16px !important; font-size: 13px !important; }
+  .settings-row { grid-template-columns: 1fr !important; gap: 8px !important; }
+}
+
 /* Message action icons — show on hover (desktop), always on touch */
 article:hover .msg-actions { opacity: 1 !important; }
 @media (hover: none) { .msg-actions { opacity: 1 !important; } }
