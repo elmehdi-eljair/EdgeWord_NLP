@@ -98,13 +98,35 @@ class ReasoningEngine:
 
         return prompt
 
+    def _generate_stage_label(self, stage_name: str, message: str) -> str:
+        """Generate a short dynamic label for a reasoning stage based on the user's message."""
+        prompts = {
+            "analyse": f"In 6 words max, describe what you're analysing about: {message[:100]}. Reply ONLY with the label.",
+            "retrieve": f"In 6 words max, describe what you're searching for regarding: {message[:100]}. Reply ONLY with the label.",
+            "reason": f"In 6 words max, describe what you're reasoning about: {message[:100]}. Reply ONLY with the label.",
+            "synthesise": f"In 6 words max, describe what answer you're writing about: {message[:100]}. Reply ONLY with the label.",
+        }
+        try:
+            if self.template == "llama3":
+                prompt = f"<|start_header_id|>system<|end_header_id|>\n\nYou generate ultra-short stage labels. Reply with ONLY the label, nothing else.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompts.get(stage_name, 'Thinking...')}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            else:
+                prompt = f"<|im_start|>system\nYou generate ultra-short stage labels. Reply with ONLY the label.<|im_end|>\n<|im_start|>user\n{prompts.get(stage_name, 'Thinking...')}<|im_end|>\n<|im_start|>assistant\n"
+            result = self.llm.create_completion(prompt, max_tokens=15, temperature=0.3, stream=False, echo=False)
+            label = result["choices"][0]["text"].strip().split("\n")[0].strip('"').strip(".")
+            if label and len(label) < 60:
+                return label
+        except Exception:
+            pass
+        return stage["label"] if isinstance(stage, dict) else "Thinking..."
+
     def run(self, message: str, rag_context: str = "") -> Generator[dict, None, None]:
         """Run reasoning chain, yielding events for each stage and token."""
         context = {}
 
         for stage in STAGES:
-            # Signal stage start
-            yield {"type": "stage", "name": stage["name"], "label": stage["label"]}
+            # Generate dynamic label based on user's message
+            dynamic_label = self._generate_stage_label(stage["name"], message)
+            yield {"type": "stage", "name": stage["name"], "label": dynamic_label}
 
             # Build prompt with accumulated context
             prompt = self._build_stage_prompt(stage, message, context, rag_context)

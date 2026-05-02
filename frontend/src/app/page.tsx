@@ -908,11 +908,16 @@ export default function Home(){
           if(event.type==="stage"){
             currentStage=event.name;
             reasoning[event.name]="";
-            const stageLabel:{[k:string]:string}={analyse:"Analysing...",retrieve:"Retrieving...",reason:"Reasoning...",synthesise:"Writing answer..."};
-            setMessages(p=>p.map(m=>m.id===amId?{...m,text:stageLabel[event.name]||"Thinking...",reasoning:{...reasoning}}:m));
+            // Use dynamic label from backend
+            const label=event.label||currentStage;
+            setMessages(p=>p.map(m=>m.id===amId?{...m,text:`*${label}*`,reasoning:{...reasoning}}:m));
           }else if(event.type==="token"){
             reasoning[event.name]=(reasoning[event.name]||"")+event.text;
-            const displayText=reasoning.synthesise||`**${currentStage.toUpperCase()}**\n${reasoning[currentStage]||""}`;
+            // Show current stage content streaming, with stage name as heading
+            const stageNum={analyse:1,retrieve:2,reason:3,synthesise:4}[currentStage]||0;
+            const displayText=currentStage==="synthesise"
+              ? reasoning.synthesise
+              : `**Stage ${stageNum}/4**\n${reasoning[currentStage]||""}`;
             setMessages(p=>p.map(m=>m.id===amId?{...m,text:displayText,reasoning:{...reasoning}}:m));
           }else if(event.type==="stage_done"){
             reasoning[event.name]=event.output;
