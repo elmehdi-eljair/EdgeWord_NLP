@@ -23,6 +23,8 @@ export interface Message {
   skillUsed?: string;
   reasoning?: Record<string, string>;
   stageLabel?: string;
+  webResults?: {title:string;url:string;snippet:string}[];
+  webSuggest?: boolean;
 }
 
 export interface Attachment {

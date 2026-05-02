@@ -261,6 +261,24 @@ function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}
       {/* Reasoning chain — collapsible stages */}
       {msg.reasoning&&Object.keys(msg.reasoning).length>0&&<ReasoningChain reasoning={msg.reasoning}/>}
       {msg.ragSources&&msg.ragSources.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{msg.ragSources.map((s,i)=><span key={i} style={{padding:"4px 10px",background:"var(--md-primary-container)",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-on-primary-container)"}}>{s}</span>)}</div>}
+      {/* Web search results */}
+      {msg.webResults&&msg.webResults.length>0&&<div style={{marginTop:10,padding:12,background:"var(--md-surface-container-low)",borderRadius:12,border:"1px solid var(--md-outline-variant)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--md-tertiary)" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span style={{fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,color:"var(--md-tertiary)"}}>Web sources</span>
+        </div>
+        {msg.webResults.map((w,i)=><a key={i} href={w.url} target="_blank" rel="noopener" style={{display:"block",padding:"6px 0",borderTop:i>0?"1px solid var(--md-outline-variant)":"none",textDecoration:"none"}}>
+          <div style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-primary)",marginBottom:2}}>{w.title}</div>
+          <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)",lineHeight:1.4}}>{w.snippet}</div>
+        </a>)}
+      </div>}
+      {/* Web search suggestion */}
+      {msg.webSuggest&&!msg.webResults&&<div style={{marginTop:8}}>
+        <button onClick={()=>{/* Re-send with web search enabled */}} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 14px",background:"var(--md-tertiary-container)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-on-tertiary-container)",transition:"all .2s var(--ease)"}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Search the web for a better answer
+        </button>
+      </div>}
       {!isError&&msg.tokens!=null&&<div style={{marginTop:8,fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)",opacity:.6}}>{msg.tokens} tok{msg.tps!=null&&` · ${msg.tps.toFixed(1)} t/s`}{msg.cached&&" · cached"}</div>}
       {/* Action icons — copy + re-run */}
       {!isError&&<div style={{display:"flex",gap:2,marginTop:6,opacity:0,transition:"opacity .2s var(--ease)"}} className="msg-actions">
@@ -858,6 +876,7 @@ export default function Home(){
   const [autoModeOn,_setAutoMode]=useState(false);
   const setAutoModeOn=(v:boolean)=>{_setAutoMode(v);localStorage.setItem("edgeword.auto_mode",v?"true":"false");};
   const [reasoningOn,setReasoningOn]=useState(false);
+  const [webSearchOn,setWebSearchOn]=useState(false);
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const [searchOpen,setSearchOpen]=useState(false);
   const [searchQuery,setSearchQuery]=useState("");
@@ -965,6 +984,8 @@ export default function Home(){
               toolResult:meta.tool_result||undefined,
               autoProfile:meta.auto_profile||undefined,
               skillUsed:meta.skill_used||undefined,
+              webResults:meta.web_results?.length?meta.web_results:undefined,
+              webSuggest:meta.web_suggest||false,
               tokens:event.tokens,tps:event.tps,ttft:event.ttft_s,totalS:event.total_s,
             }:m));
           }
@@ -976,13 +997,14 @@ export default function Home(){
           repeatPenalty:Number(localStorage.getItem("edgeword_repeat_penalty")||"1.1"),
           systemPrompt:localStorage.getItem("edgeword_system_prompt")||"",
           autoMode:autoModeOn,
+          useWeb:webSearchOn,
         });
-        const am:Message={id:amId,role:"assistant",text:streamText,sentiment:meta.sentiment,ragSources:meta.rag_sources?.length?meta.rag_sources:undefined,toolResult:meta.tool_result||undefined,autoProfile:meta.auto_profile||undefined,skillUsed:meta.skill_used||undefined,tokens:meta.tokens,timestamp:Date.now()};
+        const am:Message={id:amId,role:"assistant",text:streamText,sentiment:meta.sentiment,ragSources:meta.rag_sources?.length?meta.rag_sources:undefined,toolResult:meta.tool_result||undefined,autoProfile:meta.auto_profile||undefined,skillUsed:meta.skill_used||undefined,webResults:meta.web_results?.length?meta.web_results:undefined,webSuggest:meta.web_suggest||false,tokens:meta.tokens,timestamp:Date.now()};
         api.saveMessage(am);
       }
     }catch(err:any){setMessages(p=>[...p,{id:uid(),role:"assistant",text:`Error: ${err.message}`,timestamp:Date.now()}]);}
     finally{setGenerating(false);}
-  },[input,generating,chatFiles,reasoningOn,autoModeOn]);
+  },[input,generating,chatFiles,reasoningOn,autoModeOn,webSearchOn]);
 
   const toggleRec=async()=>{if(recording){mediaRef.current?.stop();setRecording(false);return;}try{const s=await navigator.mediaDevices.getUserMedia({audio:true});const rec=new MediaRecorder(s);const ch:Blob[]=[];rec.ondataavailable=e=>ch.push(e.data);rec.onstop=async()=>{s.getTracks().forEach(t=>t.stop());try{const r=await api.transcribe(new File([new Blob(ch,{type:"audio/webm"})],"r.webm",{type:"audio/webm"}));if(r.text)setInput(p=>p+(p?" ":"")+r.text);}catch{}};rec.start();mediaRef.current=rec;setRecording(true);}catch{}};
 
@@ -1209,6 +1231,13 @@ export default function Home(){
               <button onClick={toggleRec} title="voice" style={{width:36,height:36,borderRadius:"50%",background:recording?"var(--md-error-container)":"transparent",border:0,cursor:"pointer",color:recording?"var(--md-error)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v4"/></svg>
               </button>
+              {/* Web search toggle */}
+              <button onClick={()=>setWebSearchOn(!webSearchOn)} title={webSearchOn?"Web search ON":"Enable web search"}
+                style={{width:36,height:36,borderRadius:"50%",background:webSearchOn?"var(--md-tertiary)":"transparent",border:0,cursor:"pointer",color:webSearchOn?"#fff":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
+                onMouseEnter={e=>{if(!webSearchOn)e.currentTarget.style.background="var(--md-surface-container-high)";}}
+                onMouseLeave={e=>{if(!webSearchOn)e.currentTarget.style.background="transparent";}}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              </button>
             </div>
             <button onClick={()=>send()} disabled={!input.trim()&&!chatFiles.length} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px",background:(input.trim()||chatFiles.length)?"var(--md-primary)":"var(--md-surface-container-high)",color:(input.trim()||chatFiles.length)?"var(--md-on-primary)":"var(--md-on-surface-variant)",border:0,borderRadius:999,cursor:(input.trim()||chatFiles.length)?"pointer":"default",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,letterSpacing:".01em",transition:"all .2s var(--ease)",boxShadow:(input.trim()||chatFiles.length)?`0 1px 2px 0 var(--md-shadow),0 1px 3px 1px var(--md-shadow-2)`:"none"}}>
               <span className="hide-mobile">Send</span>
@@ -1233,6 +1262,10 @@ export default function Home(){
           <button onClick={()=>{imgRef.current?.click();setMobileActionsOpen(false);}} style={{flex:1,padding:"10px 0",background:"var(--md-surface-container-high)",border:0,borderRadius:12,cursor:"pointer",color:"var(--md-on-surface-variant)",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
             Image
+          </button>
+          <button onClick={()=>{setWebSearchOn(!webSearchOn);setMobileActionsOpen(false);}} style={{flex:1,padding:"10px 0",background:webSearchOn?"var(--md-tertiary)":"var(--md-surface-container-high)",border:0,borderRadius:12,cursor:"pointer",color:webSearchOn?"#fff":"var(--md-on-surface-variant)",fontFamily:"var(--google-sans)",fontSize:11,fontWeight:500,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            Web
           </button>
         </div>}
         </div>{/* close composer inner wrapper */}

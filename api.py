@@ -56,6 +56,7 @@ class ChatRequest(BaseModel):
     use_tools: bool = Field(True, description="Enable auto-tools")
     use_cache: bool = Field(True, description="Enable response cache")
     auto_mode: bool = Field(False, description="Auto-select optimal params per message")
+    use_web: bool = Field(False, description="Enable web search for this message")
 
 class ChatResponse(BaseModel):
     response: str
@@ -70,6 +71,8 @@ class ChatResponse(BaseModel):
     session_id: str = "default"
     auto_profile: str | None = None
     skill_used: str | None = None
+    web_results: list[dict] = []
+    web_suggest: bool = False
 
 class ClassifyRequest(BaseModel):
     text: str = Field(..., description="Text to classify")
@@ -137,6 +140,7 @@ auto_tools = None
 key_manager = None
 conv_store = None
 auto_mode_engine = None
+web_search_engine = None
 import threading
 _llm_lock = threading.Lock()  # Global lock — llama.cpp is NOT thread-safe
 skill_engine = None
@@ -248,6 +252,15 @@ async def lifespan(app: FastAPI):
     from auto_mode import AutoMode
     global auto_mode_engine
     auto_mode_engine = AutoMode()
+
+    # Web search
+    global web_search_engine
+    try:
+        from web_search import WebSearch
+        web_search_engine = WebSearch()
+        print("  Web search: ready (DuckDuckGo)")
+    except Exception as e:
+        print(f"  Web search: disabled ({e})")
 
     # Skills engine (shares embedder with RAG)
     global skill_engine
@@ -664,6 +677,18 @@ async def chat_stream(req: ChatRequest, auth: dict = Depends(verify_auth)):
             skill_name = matched_skill["name"]
             effective_system = skill_engine.apply(matched_skill, req.system_prompt)
 
+    # Web search
+    web_results = []
+    web_suggest = False
+    if req.use_web and web_search_engine:
+        web_results = web_search_engine.search(req.message, max_results=5)
+        if web_results:
+            web_context = web_search_engine.format_for_llm(web_results)
+            effective_system = (effective_system or "") + "\n\n" + web_context
+            web_results = web_search_engine.format_for_display(web_results)
+    elif web_search_engine and not req.use_web:
+        web_suggest = web_search_engine.should_search(req.message)
+
     prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result, system_prompt=effective_system)
 
     import asyncio, queue, threading
@@ -673,7 +698,7 @@ async def chat_stream(req: ChatRequest, auth: dict = Depends(verify_auth)):
     def _generate_in_thread():
         _llm_lock.acquire()
         try:
-            q.put(f"data: {_json.dumps({'type':'meta','sentiment':sentiment,'tool_result':tool_result or None,'rag_sources':rag_sources,'auto_profile':auto_profile,'skill_used':skill_name})}\n\n")
+            q.put(f"data: {_json.dumps({'type':'meta','sentiment':sentiment,'tool_result':tool_result or None,'rag_sources':rag_sources,'auto_profile':auto_profile,'skill_used':skill_name,'web_results':web_results,'web_suggest':web_suggest})}\n\n")
 
             token_count = 0
             t_start = time.perf_counter()
@@ -852,6 +877,23 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
             skill_name = matched_skill["name"]
             effective_system = skill_engine.apply(matched_skill, req.system_prompt)
 
+    # Web search — if enabled or auto-suggested
+    web_results = []
+    web_suggest = False
+    web_context = ""
+    if req.use_web and web_search_engine:
+        web_results = web_search_engine.search(req.message, max_results=5)
+        if web_results:
+            web_context = web_search_engine.format_for_llm(web_results)
+            web_results = web_search_engine.format_for_display(web_results)
+    elif web_search_engine and not req.use_web:
+        # Check if we should suggest web search
+        web_suggest = web_search_engine.should_search(req.message)
+
+    # Inject web context into system prompt if available
+    if web_context:
+        effective_system = (effective_system or "") + "\n\n" + web_context
+
     # Generate (capture output instead of printing)
     prompt = compute_path._build_prompt(req.message, rag_context=rag_context, tool_result=tool_result, system_prompt=effective_system)
 
@@ -913,6 +955,8 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         session_id=req.session_id,
         auto_profile=auto_profile,
         skill_used=skill_name,
+        web_results=web_results,
+        web_suggest=web_suggest,
     )
 
 

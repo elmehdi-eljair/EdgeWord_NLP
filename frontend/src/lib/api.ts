@@ -82,6 +82,7 @@ export async function chat(
     useTools?: boolean;
     useCache?: boolean;
     autoMode?: boolean;
+    useWeb?: boolean;
   } = {}
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/v1/chat`, {
@@ -100,6 +101,7 @@ export async function chat(
       use_tools: opts.useTools ?? true,
       use_cache: opts.useCache ?? true,
       auto_mode: opts.autoMode ?? false,
+      use_web: opts.useWeb ?? false,
     }),
   });
   if (!res.ok) {
@@ -228,7 +230,7 @@ export async function chatStream(
   opts: {
     maxTokens?: number; temperature?: number; topP?: number; topK?: number;
     repeatPenalty?: number; systemPrompt?: string; autoMode?: boolean;
-    useRag?: boolean; useTools?: boolean;
+    useRag?: boolean; useTools?: boolean; useWeb?: boolean;
   } = {}
 ): Promise<void> {
   const res = await fetch(`${SSE_BASE}/v1/chat/stream`, {
@@ -243,6 +245,7 @@ export async function chatStream(
       repeat_penalty: opts.repeatPenalty ?? 1.1,
       system_prompt: opts.systemPrompt ?? "",
       auto_mode: opts.autoMode ?? false,
+      use_web: opts.useWeb ?? false,
       session_id: "web-ui",
       use_rag: opts.useRag ?? true,
       use_tools: opts.useTools ?? true,
