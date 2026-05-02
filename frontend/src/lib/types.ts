@@ -22,6 +22,7 @@ export interface Message {
   autoProfile?: string;
   skillUsed?: string;
   reasoning?: Record<string, string>;
+  stageLabel?: string;
 }
 
 export interface Attachment {

@@ -213,11 +213,21 @@ function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
         </button>}
       </div>
+      {/* Reasoning stage indicator — animated pill */}
+      {msg.stageLabel&&<div style={{marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"var(--md-primary-container)",borderRadius:999,animation:"settle .3s var(--ease-emph) both"}}>
+          {/* Animated dots */}
+          <span style={{display:"flex",gap:3}}>
+            {[0,1,2].map(i=><span key={i} style={{width:5,height:5,borderRadius:"50%",background:"var(--md-primary)",opacity:.4,animation:`livepulse 1.2s ease-in-out ${i*0.2}s infinite`}}/>)}
+          </span>
+          <span style={{fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:"var(--md-on-primary-container)"}}>{msg.stageLabel}</span>
+        </div>
+      </div>}
       {isError?
         <div style={{padding:"12px 16px",background:"var(--md-error-container)",borderRadius:12,fontFamily:"var(--sans)",fontSize:14,color:"var(--md-on-error-container)",lineHeight:1.5}}>
           Something went wrong. Tap the info icon for details.
         </div>
-      :
+      :msg.text?
         <div className="msg-body" style={{fontFamily:"var(--sans)",fontSize:15.5,lineHeight:1.6,color:"var(--md-on-surface-variant)",fontWeight:400,maxWidth:"80ch"}}>
           <Markdown components={{
             p:({children})=><p style={{marginBottom:".85em"}}>{children}</p>,
@@ -246,7 +256,7 @@ function Msg({msg,isUser,onRerun}:{msg:Message;isUser:boolean;onRerun?:()=>void}
             td:({children})=><td style={{padding:"8px 12px",borderBottom:"1px solid var(--md-outline-variant)",color:"var(--md-on-surface-variant)"}}>{children}</td>,
           }}>{msg.text}</Markdown>
         </div>
-      }
+      :null}
       {msg.toolResult&&<div style={{margin:"12px 0",padding:"12px 16px",background:"var(--md-surface-container)",borderRadius:8,fontFamily:"var(--mono)",fontSize:13,color:"var(--md-on-surface-variant)",border:"1px solid var(--md-outline-variant)"}}>{msg.toolResult}</div>}
       {/* Reasoning chain — collapsible stages */}
       {msg.reasoning&&Object.keys(msg.reasoning).length>0&&<ReasoningChain reasoning={msg.reasoning}/>}
@@ -908,25 +918,22 @@ export default function Home(){
           if(event.type==="stage"){
             currentStage=event.name;
             reasoning[event.name]="";
-            // Use dynamic label from backend
-            const label=event.label||currentStage;
-            setMessages(p=>p.map(m=>m.id===amId?{...m,text:`*${label}*`,reasoning:{...reasoning}}:m));
+            // Show dynamic label as loading indicator — text stays empty until synthesise
+            setMessages(p=>p.map(m=>m.id===amId?{...m,text:"",stageLabel:event.label||currentStage,reasoning:{...reasoning}}:m));
           }else if(event.type==="token"){
             reasoning[event.name]=(reasoning[event.name]||"")+event.text;
-            // Show current stage content streaming, with stage name as heading
-            const stageNum={analyse:1,retrieve:2,reason:3,synthesise:4}[currentStage]||0;
-            const displayText=currentStage==="synthesise"
-              ? reasoning.synthesise
-              : `**Stage ${stageNum}/4**\n${reasoning[currentStage]||""}`;
-            setMessages(p=>p.map(m=>m.id===amId?{...m,text:displayText,reasoning:{...reasoning}}:m));
+            if(currentStage==="synthesise"){
+              // Final stage: stream text directly as the answer
+              setMessages(p=>p.map(m=>m.id===amId?{...m,text:reasoning.synthesise,stageLabel:undefined,reasoning:{...reasoning}}:m));
+            }else{
+              // Earlier stages: keep showing the label, don't show stage content in main text
+              setMessages(p=>p.map(m=>m.id===amId?{...m,reasoning:{...reasoning}}:m));
+            }
           }else if(event.type==="stage_done"){
             reasoning[event.name]=event.output;
-            console.log("[Reasoning] Stage done:",event.name,"output length:",event.output?.length);
-            setMessages(p=>p.map(m=>m.id===amId?{...m,reasoning:{...reasoning}}:m));
           }else if(event.type==="done"){
             finalResponse=event.response||"";
-            console.log("[Reasoning] Complete. Final response length:",finalResponse.length,"Stages:",Object.keys(event.reasoning||{}));
-            setMessages(p=>p.map(m=>m.id===amId?{...m,text:finalResponse,reasoning:event.reasoning}:m));
+            setMessages(p=>p.map(m=>m.id===amId?{...m,text:finalResponse,stageLabel:undefined,reasoning:event.reasoning}:m));
           }
         });
         const am:Message={id:amId,role:"assistant",text:finalResponse||reasoning.synthesise||"",reasoning,timestamp:Date.now()};
