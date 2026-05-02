@@ -1,14 +1,7 @@
 """
 EdgeWord NLP — Reasoning Engine
 Multi-stage chain-of-thought reasoning with streaming.
-Stages: Analyse → Retrieve → Reason → Synthesise
-
-Usage:
-    engine = ReasoningEngine(llm, rag_engine)
-    for event in engine.run(message, history):
-        # event = {"type": "stage", "name": "analyse"} or
-        #         {"type": "token", "stage": "analyse", "text": "..."} or
-        #         {"type": "done", "reasoning": {...}, "response": "..."}
+Each stage generates the next stage's dynamic label based on its findings.
 """
 
 from typing import Generator
@@ -17,55 +10,68 @@ from typing import Generator
 STAGES = [
     {
         "name": "analyse",
-        "label": "Analysing",
         "system": (
-            "You are an analytical assistant. Your job is to break down the user's question.\n"
+            "You are an analytical assistant. Break down the user's question.\n"
             "1. What is the user actually asking?\n"
-            "2. What information do you need to answer it?\n"
-            "3. What are the key concepts involved?\n"
-            "Be concise — 3-5 sentences max. This is internal thinking, not the final answer."
+            "2. What information do you need?\n"
+            "3. What are the key concepts?\n"
+            "Be concise — 3-5 sentences max.\n\n"
+            "IMPORTANT: End your response with a line starting with NEXT: followed by "
+            "a short phrase (max 8 words) describing what you will search for next."
         ),
         "max_tokens": 200,
     },
     {
         "name": "retrieve",
-        "label": "Retrieving",
         "system": (
-            "Based on the analysis below, formulate what information would be most useful.\n"
-            "If document context is provided, evaluate its relevance.\n"
-            "Score each piece of evidence: highly relevant, somewhat relevant, or not relevant.\n"
-            "Be concise — list format."
+            "Based on the analysis below, evaluate the available information.\n"
+            "If document context is provided, score its relevance.\n"
+            "List what's useful and what's missing.\n\n"
+            "IMPORTANT: End your response with a line starting with NEXT: followed by "
+            "a short phrase (max 8 words) describing what you will reason about next."
         ),
-        "max_tokens": 150,
+        "max_tokens": 200,
     },
     {
         "name": "reason",
-        "label": "Reasoning",
         "system": (
-            "Think step by step about the question using the analysis and evidence.\n"
+            "Think step by step using the analysis and evidence.\n"
             "1. State your reasoning clearly\n"
-            "2. Consider alternative interpretations\n"
-            "3. Note any uncertainties\n"
-            "4. Reach a conclusion\n"
-            "This is your internal reasoning chain — be thorough."
+            "2. Consider alternatives\n"
+            "3. Reach a conclusion\n\n"
+            "IMPORTANT: End your response with a line starting with NEXT: followed by "
+            "a short phrase (max 8 words) describing the answer you will write."
         ),
         "max_tokens": 300,
     },
     {
         "name": "synthesise",
-        "label": "Synthesising",
         "system": (
-            "Now write your final answer to the user.\n"
-            "Use your analysis, evidence, and reasoning to produce a clear, well-structured response.\n"
-            "Be precise, helpful, and direct. This is what the user will see."
+            "Write your final answer to the user.\n"
+            "Use your analysis, evidence, and reasoning.\n"
+            "Be precise, helpful, and direct."
         ),
         "max_tokens": 512,
     },
 ]
 
 
+def _extract_next_label(text: str) -> tuple[str, str]:
+    """Extract NEXT: label from stage output. Returns (clean_output, label)."""
+    lines = text.strip().split("\n")
+    label = ""
+    clean_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.upper().startswith("NEXT:"):
+            label = stripped[5:].strip().strip('"').strip("*").strip(".")
+        else:
+            clean_lines.append(line)
+    return "\n".join(clean_lines).strip(), label
+
+
 class ReasoningEngine:
-    """Multi-stage reasoning with streaming chain-of-thought."""
+    """Multi-stage reasoning with dynamic labels derived from each stage's output."""
 
     def __init__(self, llm, rag_engine=None, template="llama3"):
         self.llm = llm
@@ -73,20 +79,14 @@ class ReasoningEngine:
         self.template = template
 
     def _build_stage_prompt(self, stage: dict, message: str, context: dict, rag_context: str = "") -> str:
-        """Build prompt for a reasoning stage."""
         system = stage["system"]
-
-        # Add previous stage outputs as context
         if context:
             system += "\n\nPrevious thinking:\n"
             for prev_name, prev_output in context.items():
                 system += f"[{prev_name.upper()}]: {prev_output}\n"
-
-        # Add RAG context in retrieve stage
         if stage["name"] == "retrieve" and rag_context:
             system += f"\n\nRetrieved documents:\n{rag_context}"
 
-        # Build in the right template format
         if self.template == "llama3":
             prompt = f"<|start_header_id|>system<|end_header_id|>\n\n{system}<|eot_id|>"
             prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{message}<|eot_id|>"
@@ -95,50 +95,29 @@ class ReasoningEngine:
             prompt = f"<|im_start|>system\n{system}<|im_end|>\n"
             prompt += f"<|im_start|>user\n{message}<|im_end|>\n"
             prompt += "<|im_start|>assistant\n"
-
         return prompt
 
-    def _generate_stage_label(self, stage_name: str, message: str) -> str:
-        """Generate a short dynamic label for a reasoning stage based on the user's message."""
-        prompts = {
-            "analyse": f"In 6 words max, describe what you're analysing about: {message[:100]}. Reply ONLY with the label.",
-            "retrieve": f"In 6 words max, describe what you're searching for regarding: {message[:100]}. Reply ONLY with the label.",
-            "reason": f"In 6 words max, describe what you're reasoning about: {message[:100]}. Reply ONLY with the label.",
-            "synthesise": f"In 6 words max, describe what answer you're writing about: {message[:100]}. Reply ONLY with the label.",
-        }
-        try:
-            if self.template == "llama3":
-                prompt = f"<|start_header_id|>system<|end_header_id|>\n\nYou generate ultra-short stage labels. Reply with ONLY the label, nothing else.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompts.get(stage_name, 'Thinking...')}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-            else:
-                prompt = f"<|im_start|>system\nYou generate ultra-short stage labels. Reply with ONLY the label.<|im_end|>\n<|im_start|>user\n{prompts.get(stage_name, 'Thinking...')}<|im_end|>\n<|im_start|>assistant\n"
-            result = self.llm.create_completion(prompt, max_tokens=15, temperature=0.3, stream=False, echo=False)
-            label = result["choices"][0]["text"].strip().split("\n")[0].strip('"').strip(".")
-            if label and len(label) < 60:
-                return label
-        except Exception:
-            pass
-        return stage["label"] if isinstance(stage, dict) else "Thinking..."
-
     def run(self, message: str, rag_context: str = "") -> Generator[dict, None, None]:
-        """Run reasoning chain, yielding events for each stage and token."""
+        """Run reasoning chain. Each stage produces the next stage's label."""
         context = {}
 
-        for stage in STAGES:
-            # Generate dynamic label based on user's message
-            dynamic_label = self._generate_stage_label(stage["name"], message)
-            yield {"type": "stage", "name": stage["name"], "label": dynamic_label}
+        # First label is based on the question itself
+        topic = " ".join(message.split()[:8])
+        next_label = f"Breaking down: {topic}"
 
-            # Build prompt with accumulated context
+        for i, stage in enumerate(STAGES):
+            # Yield the label (dynamic from previous stage, or initial)
+            yield {"type": "stage", "name": stage["name"], "label": next_label}
+
             prompt = self._build_stage_prompt(stage, message, context, rag_context)
 
-            # Stream tokens
             stage_output = ""
             stream = self.llm.create_completion(
                 prompt,
                 max_tokens=stage["max_tokens"],
                 stream=True,
                 echo=False,
-                temperature=0.3,  # Lower temp for reasoning
+                temperature=0.3,
                 top_p=0.85,
             )
 
@@ -149,10 +128,27 @@ class ReasoningEngine:
                 stage_output += tok
                 yield {"type": "token", "stage": stage["name"], "text": tok}
 
-            context[stage["name"]] = stage_output.strip()
-            yield {"type": "stage_done", "name": stage["name"], "output": stage_output.strip()}
+            # Extract NEXT: label for the following stage
+            clean_output, extracted_label = _extract_next_label(stage_output)
+            context[stage["name"]] = clean_output
 
-        # Done — yield final result
+            if extracted_label and len(extracted_label) < 80:
+                next_label = extracted_label
+            else:
+                # Fallback: extract a meaningful snippet from the stage output
+                first_line = clean_output.strip().split("\n")[0].strip("*#- 1234567890.").strip()
+                if first_line and len(first_line) > 10 and len(first_line) < 80:
+                    # Use first meaningful line as label
+                    next_label = first_line[:60] + ("..." if len(first_line) > 60 else "")
+                elif i == 0:
+                    next_label = f"Searching for: {' '.join(message.split()[:5])}"
+                elif i == 1:
+                    next_label = f"Reasoning about {' '.join(message.split()[:5])}"
+                elif i == 2:
+                    next_label = f"Writing answer about {' '.join(message.split()[:4])}"
+
+            yield {"type": "stage_done", "name": stage["name"], "output": clean_output}
+
         yield {
             "type": "done",
             "reasoning": context,

@@ -137,6 +137,8 @@ auto_tools = None
 key_manager = None
 conv_store = None
 auto_mode_engine = None
+import threading
+_llm_lock = threading.Lock()  # Global lock — llama.cpp is NOT thread-safe
 skill_engine = None
 stt_engine = None
 tts_engine = None
@@ -669,6 +671,7 @@ async def chat_stream(req: ChatRequest, auth: dict = Depends(verify_auth)):
     q: queue.Queue = queue.Queue()
 
     def _generate_in_thread():
+        _llm_lock.acquire()
         try:
             q.put(f"data: {_json.dumps({'type':'meta','sentiment':sentiment,'tool_result':tool_result or None,'rag_sources':rag_sources,'auto_profile':auto_profile,'skill_used':skill_name})}\n\n")
 
@@ -696,6 +699,7 @@ async def chat_stream(req: ChatRequest, auth: dict = Depends(verify_auth)):
         except Exception as e:
             q.put(f"data: {_json.dumps({'type':'error','detail':str(e)})}\n\n")
         finally:
+            _llm_lock.release()
             q.put(None)  # sentinel
 
     async def async_generate():
@@ -740,12 +744,14 @@ async def chat_reason(req: ChatRequest, auth: dict = Depends(verify_auth)):
     q2: queue.Queue = queue.Queue()
 
     def _reason_in_thread():
+        _llm_lock.acquire()
         try:
             for event in engine.run(req.message, rag_context=rag_context):
                 q2.put(f"data: {_json.dumps(event)}\n\n")
         except Exception as e:
             q2.put(f"data: {_json.dumps({'type':'error','detail':str(e)})}\n\n")
         finally:
+            _llm_lock.release()
             q2.put(None)
 
     async def async_reason():
@@ -854,6 +860,7 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
     response_parts = []
     t0 = time.perf_counter()
 
+    _llm_lock.acquire()
     stream = compute_path.llm.create_completion(
         prompt,
         max_tokens=gen_max,
@@ -873,6 +880,8 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
             first_token_time = time.perf_counter() - t0
         token_count += 1
         response_parts.append(tok)
+
+    _llm_lock.release()
 
     gen_total = time.perf_counter() - t0
     tps = token_count / gen_total if gen_total > 0 else 0
