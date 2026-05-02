@@ -253,6 +253,12 @@ async def lifespan(app: FastAPI):
     global auto_mode_engine
     auto_mode_engine = AutoMode()
 
+    # Model manager
+    global model_manager
+    from model_manager import ModelManager
+    model_manager = ModelManager(str(Path(__file__).parent / "models"))
+    print(f"  Model manager: {len(model_manager.list_models())} models available")
+
     # Web search
     global web_search_engine
     try:
@@ -575,6 +581,45 @@ async def revoke_key(key_prefix: str, auth: dict = Depends(verify_auth)):
     if key_manager.revoke_key(key_prefix):
         return {"status": "revoked"}
     raise HTTPException(status_code=404, detail="Key not found")
+
+
+# ── Model management endpoints ──
+
+model_manager = None
+
+@app.get("/v1/models")
+async def list_models(auth: dict = Depends(verify_auth)):
+    """List all available models with installed status."""
+    if not model_manager:
+        return {"models": [], "active": None}
+    models = model_manager.list_models()
+    active = os.path.basename(compute_path.model_path) if compute_path else None
+    return {"models": models, "active": active}
+
+
+@app.post("/v1/models/{model_id}/download")
+async def download_model(model_id: str, auth: dict = Depends(verify_auth)):
+    """Download a model from HuggingFace."""
+    if not model_manager:
+        raise HTTPException(status_code=503, detail="Model manager not available")
+    try:
+        result = model_manager.download(model_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/models/{model_id}/activate")
+async def activate_model(model_id: str, auth: dict = Depends(verify_auth)):
+    """Switch the active model."""
+    if not model_manager or not compute_path:
+        raise HTTPException(status_code=503, detail="Model manager not available")
+    try:
+        with _llm_lock:
+            result = model_manager.switch_model(model_id, compute_path)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/v1/classify", response_model=ClassifyResponse)

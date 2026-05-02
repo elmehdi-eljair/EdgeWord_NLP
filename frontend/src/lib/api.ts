@@ -378,6 +378,27 @@ export async function createApiKey(name: string, rateLimit = 60) {
   return res.json();
 }
 
+// ── Models ──
+
+export async function listModels() {
+  const res = await fetch(`${API_BASE}/v1/models`, { headers: headers() });
+  return res.json();
+}
+
+export async function downloadModel(modelId: string) {
+  const res = await fetch(`${API_BASE}/v1/models/${modelId}/download`, {
+    method: "POST", headers: headers(),
+  });
+  return res.json();
+}
+
+export async function activateModel(modelId: string) {
+  const res = await fetch(`${API_BASE}/v1/models/${modelId}/activate`, {
+    method: "POST", headers: headers(),
+  });
+  return res.json();
+}
+
 export async function revokeApiKey(keyPrefix: string) {
   const res = await fetch(`${API_BASE}/v1/keys/${keyPrefix}`, {
     method: "DELETE", headers: headers(),

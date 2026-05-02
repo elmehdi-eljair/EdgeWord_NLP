@@ -346,6 +346,9 @@ function Settings({open,onClose,health,onLogout,initialTab="profile",autoModeOn=
   const [repPen,setRepPen]=useState(1.1);
   const [sysPrompt,setSysPrompt]=useState("You are EdgeWord Assistant, a helpful AI. Be concise and clear.");
   const [modelTab,setModelTab]=useState("config");
+  const [realModels,setRealModels]=useState<any[]>([]);
+  const [activeModel,setActiveModel]=useState<string|null>(null);
+  const [downloadingModel,setDownloadingModel]=useState<string|null>(null);
   const [scenarioName,setScenarioName]=useState("");
   const [customScenarios,setCustomScenarios]=useState<any[]>([]);
   const [temp,setTemp]=useState(0.7);
@@ -369,6 +372,7 @@ function Settings({open,onClose,health,onLogout,initialTab="profile",autoModeOn=
     api.getProfile().then(setProfile).catch(()=>{});
     api.listKnowledge().then(d=>setDocs(d.documents||[])).catch(()=>{});
     api.listApiKeys().then(d=>setKeys(d.keys||[])).catch(()=>{});
+    api.listModels().then(d=>{setRealModels(d.models||[]);setActiveModel(d.active||null);}).catch(()=>{});
   },[open,initialTab]);
 
   if(!open) return null;
@@ -765,33 +769,49 @@ function Settings({open,onClose,health,onLogout,initialTab="profile",autoModeOn=
 
               {/* ── Model Gallery ── */}
               {modelTab==="gallery"&&<div>
-                <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Available Models</h4>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  {MODEL_GALLERY.map(m=>(
-                    <div key={m.id} style={{padding:16,background:"var(--md-surface-container-low)",borderRadius:16,transition:"all .2s var(--ease)",border:"1px solid transparent"}}
-                      onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.borderColor="var(--md-outline-variant)";}}
-                      onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="transparent";}}>
+                <h4 style={{fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:"var(--md-on-surface-variant)",marginBottom:10}}>Model Gallery</h4>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}} className="settings-row">
+                  {(realModels.length>0?realModels:MODEL_GALLERY.map(m=>({...m,installed:m.status==="installed"}))).map((m:any)=>{
+                    const isActive=activeModel&&m.file&&activeModel.includes(m.file);
+                    return <div key={m.id} style={{padding:16,background:isActive?"var(--md-primary-container)":"var(--md-surface-container-low)",borderRadius:16,transition:"all .2s var(--ease)",border:`2px solid ${isActive?"var(--md-primary)":"transparent"}`}}
+                      onMouseEnter={e=>{if(!isActive){e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.borderColor="var(--md-outline-variant)";}}}
+                      onMouseLeave={e=>{if(!isActive){e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="transparent";}}}>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
                         <div style={{fontFamily:"var(--google-sans)",fontSize:14,fontWeight:500,color:"var(--md-on-surface)"}}>{m.name}</div>
-                        <StatusChip status={m.status}/>
+                        {isActive?<span style={{padding:"3px 10px",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:10,fontWeight:500,color:"var(--md-on-primary)",background:"var(--md-primary)"}}>ACTIVE</span>
+                        :m.installed?<StatusChip status="installed"/>
+                        :<StatusChip status="available"/>}
                       </div>
-                      <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)",lineHeight:1.5,marginBottom:10}}>{m.desc}</div>
+                      <div style={{fontFamily:"var(--sans)",fontSize:12,color:"var(--md-on-surface-variant)",lineHeight:1.5,marginBottom:10}}>{m.description||m.desc}</div>
                       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
                         <span style={{padding:"3px 8px",background:"var(--md-surface-container)",borderRadius:6,fontFamily:"var(--mono)",fontSize:10,color:"var(--md-on-surface-variant)"}}>{m.size}</span>
                         <span style={{padding:"3px 8px",background:"var(--md-surface-container)",borderRadius:6,fontFamily:"var(--mono)",fontSize:10,color:"var(--md-on-surface-variant)"}}>RAM: {m.ram}</span>
-                        <span title="Estimated performance on this machine" style={{padding:"3px 8px",background:"var(--md-surface-container)",borderRadius:6,fontFamily:"var(--mono)",fontSize:10,color:"var(--md-primary)",display:"flex",alignItems:"center",gap:4,cursor:"help"}}>
+                        <span style={{padding:"3px 8px",background:"var(--md-surface-container)",borderRadius:6,fontFamily:"var(--mono)",fontSize:10,color:"var(--md-primary)",display:"flex",alignItems:"center",gap:4}}>
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                          {m.tps}
+                          {m.tps_estimate||m.tps}
                         </span>
                       </div>
-                      {m.status==="available"&&<button onClick={()=>customAlert(`Downloading ${m.name}... This feature will be available in a future update.`)}
-                        style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 14px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12}}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        Download
-                      </button>}
-                      {m.status==="installed"&&<span style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-success)"}}>Currently active</span>}
-                    </div>
-                  ))}
+                      <div style={{display:"flex",gap:8}}>
+                        {!m.installed&&!isActive&&<button disabled={downloadingModel===m.id} onClick={async()=>{
+                          setDownloadingModel(m.id);
+                          try{await api.downloadModel(m.id);api.listModels().then(d=>{setRealModels(d.models||[]);setActiveModel(d.active||null);});}
+                          catch(e:any){customAlert(`Download failed: ${e.message}`);}
+                          finally{setDownloadingModel(null);}
+                        }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 14px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:downloadingModel===m.id?"wait":"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,opacity:downloadingModel===m.id?.6:1}}>
+                          {downloadingModel===m.id?<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{animation:"livepulse 1s ease-in-out infinite"}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Downloading...</>
+                          :<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download</>}
+                        </button>}
+                        {m.installed&&!isActive&&<button onClick={async()=>{
+                          try{await api.activateModel(m.id);api.listModels().then(d=>{setRealModels(d.models||[]);setActiveModel(d.active||null);});customAlert(`Switched to ${m.name}`);}
+                          catch(e:any){customAlert(`Switch failed: ${e.message}`);}
+                        }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 14px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14"/><polyline points="12 5 19 12 12 19"/></svg>
+                          Use this model
+                        </button>}
+                        {isActive&&<span style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-primary)",padding:"8px 0"}}>Currently in use</span>}
+                      </div>
+                    </div>;
+                  })}
                 </div>
               </div>}
             </div>}
