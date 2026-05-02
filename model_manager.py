@@ -11,6 +11,7 @@ Usage:
 
 import os
 import time
+import threading
 from pathlib import Path
 from huggingface_hub import hf_hub_download
 
@@ -72,8 +73,12 @@ class ModelManager:
             })
         return result
 
+    def get_download_progress(self, model_id: str) -> dict | None:
+        """Get download progress for a model. Returns None if not downloading."""
+        return self.downloading.get(model_id)
+
     def download(self, model_id: str) -> dict:
-        """Download a model from HuggingFace. Returns model info."""
+        """Start downloading a model in background. Returns immediately."""
         if model_id not in AVAILABLE_MODELS:
             raise ValueError(f"Unknown model: {model_id}")
 
@@ -83,18 +88,104 @@ class ModelManager:
         if dest.exists():
             return {"status": "already_installed", "path": str(dest)}
 
-        self.downloading[model_id] = {"status": "downloading", "started": time.time()}
-        try:
-            hf_hub_download(
-                info["repo"],
-                info["file"],
-                local_dir=str(self.models_dir),
-            )
-            del self.downloading[model_id]
-            return {"status": "installed", "path": str(dest)}
-        except Exception as e:
-            del self.downloading[model_id]
-            raise RuntimeError(f"Download failed: {e}")
+        if model_id in self.downloading:
+            return {"status": "already_downloading"}
+
+        # Start download in background thread
+        self.downloading[model_id] = {
+            "status": "downloading",
+            "started": time.time(),
+            "percent": 0,
+            "downloaded_mb": 0,
+            "total_mb": 0,
+            "speed_mbps": 0,
+        }
+
+        def _download():
+            try:
+                # Use a custom tqdm callback to track progress
+                import urllib.request
+                import json as _json
+
+                # Get file info to know total size
+                try:
+                    from huggingface_hub import hf_hub_url, get_hf_file_metadata
+                    url = hf_hub_url(info["repo"], info["file"])
+                    metadata = get_hf_file_metadata(url)
+                    total_bytes = metadata.size or 0
+                except Exception:
+                    total_bytes = 0
+
+                if total_bytes:
+                    self.downloading[model_id]["total_mb"] = round(total_bytes / 1024 / 1024, 1)
+
+                # Download with progress tracking via file size monitoring
+                t_start = time.time()
+
+                # Start actual download in sub-thread
+                download_done = threading.Event()
+                download_error = [None]
+
+                def _do_download():
+                    try:
+                        hf_hub_download(
+                            info["repo"],
+                            info["file"],
+                            local_dir=str(self.models_dir),
+                            resume_download=True,
+                        )
+                    except Exception as e:
+                        download_error[0] = e
+                    finally:
+                        download_done.set()
+
+                t = threading.Thread(target=_do_download)
+                t.start()
+
+                # Monitor progress by checking partial file size
+                while not download_done.is_set():
+                    time.sleep(0.5)
+                    # Check for partial downloads in HF cache or local dir
+                    current_size = 0
+                    for f in self.models_dir.rglob("*.incomplete"):
+                        current_size = max(current_size, f.stat().st_size)
+                    if dest.exists():
+                        current_size = dest.stat().st_size
+
+                    mb = round(current_size / 1024 / 1024, 1)
+                    elapsed = time.time() - t_start
+                    speed = round(mb / elapsed, 1) if elapsed > 0 else 0
+                    pct = round((current_size / total_bytes) * 100, 1) if total_bytes > 0 else 0
+
+                    self.downloading[model_id].update({
+                        "percent": min(pct, 99.9),
+                        "downloaded_mb": mb,
+                        "speed_mbps": speed,
+                        "elapsed_s": round(elapsed, 1),
+                    })
+
+                t.join()
+
+                if download_error[0]:
+                    self.downloading[model_id]["status"] = "error"
+                    self.downloading[model_id]["error"] = str(download_error[0])
+                else:
+                    self.downloading[model_id]["status"] = "complete"
+                    self.downloading[model_id]["percent"] = 100
+
+                # Clean up after a delay so frontend can read final status
+                time.sleep(3)
+                if model_id in self.downloading:
+                    del self.downloading[model_id]
+
+            except Exception as e:
+                self.downloading[model_id] = {"status": "error", "error": str(e)}
+                time.sleep(3)
+                if model_id in self.downloading:
+                    del self.downloading[model_id]
+
+        threading.Thread(target=_download, daemon=True).start()
+        return {"status": "started"}
 
     def switch_model(self, model_id: str, compute_path) -> dict:
         """Switch the active model. Reloads llama.cpp with the new model."""

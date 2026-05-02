@@ -392,6 +392,11 @@ export async function downloadModel(modelId: string) {
   return res.json();
 }
 
+export async function modelProgress(modelId: string) {
+  const res = await fetch(`${API_BASE}/v1/models/${modelId}/progress`, { headers: headers() });
+  return res.json();
+}
+
 export async function activateModel(modelId: string) {
   const res = await fetch(`${API_BASE}/v1/models/${modelId}/activate`, {
     method: "POST", headers: headers(),

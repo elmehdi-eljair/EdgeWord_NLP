@@ -172,6 +172,49 @@ function CodeBlock({code,lang}:{code:string;lang:string}){
 }
 
 /* ── Reasoning Chain (proper component, not IIFE — avoids React hooks error) ── */
+/* ── Download Progress Component — polls backend every 1s ── */
+function DownloadProgress({modelId,onComplete}:{modelId:string;onComplete:()=>void}){
+  const [progress,setProgress]=useState<any>({status:"downloading",percent:0});
+  useEffect(()=>{
+    let active=true;
+    const poll=async()=>{
+      try{
+        const p=await api.modelProgress(modelId);
+        if(!active)return;
+        setProgress(p);
+        if(p.status==="complete"){onComplete();return;}
+        if(p.status==="error"){return;}
+      }catch{}
+      if(active)setTimeout(poll,1000);
+    };
+    poll();
+    return()=>{active=false;};
+  },[modelId,onComplete]);
+
+  const pct=progress.percent||0;
+  const mb=progress.downloaded_mb||0;
+  const total=progress.total_mb||0;
+  const speed=progress.speed_mbps||0;
+
+  return <div style={{padding:12,background:"var(--md-surface-container)",borderRadius:12}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+      <span style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-on-surface)"}}>
+        {progress.status==="error"?"Download failed":progress.status==="complete"?"Download complete":"Downloading..."}
+      </span>
+      <span style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--md-on-surface-variant)"}}>{pct.toFixed(1)}%</span>
+    </div>
+    {/* Progress bar */}
+    <div style={{height:6,background:"var(--md-surface-container-highest)",borderRadius:3,overflow:"hidden",marginBottom:6}}>
+      <div style={{height:"100%",background:"var(--md-primary)",borderRadius:3,width:`${pct}%`,transition:"width .5s var(--ease)"}}/>
+    </div>
+    <div style={{display:"flex",justifyContent:"space-between",fontFamily:"var(--mono)",fontSize:10,color:"var(--md-on-surface-variant)"}}>
+      <span>{mb} MB / {total} MB</span>
+      <span>{speed} MB/s</span>
+    </div>
+    {progress.status==="error"&&<div style={{marginTop:6,fontFamily:"var(--sans)",fontSize:12,color:"var(--md-error)"}}>{progress.error}</div>}
+  </div>;
+}
+
 function ReasoningChain({reasoning}:{reasoning:Record<string,string>}){
   const [expanded,setExpanded]=useState(false);
   const stages=["analyse","retrieve","reason","synthesise"];
@@ -791,15 +834,16 @@ function Settings({open,onClose,health,onLogout,initialTab="profile",autoModeOn=
                           {m.tps_estimate||m.tps}
                         </span>
                       </div>
-                      <div style={{display:"flex",gap:8}}>
-                        {!m.installed&&!isActive&&<button disabled={downloadingModel===m.id} onClick={async()=>{
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {/* Download progress bar */}
+                        {downloadingModel===m.id&&<DownloadProgress modelId={m.id} onComplete={()=>{setDownloadingModel(null);api.listModels().then(d=>{setRealModels(d.models||[]);setActiveModel(d.active||null);});}}/>}
+                        {!m.installed&&!isActive&&downloadingModel!==m.id&&<button onClick={async()=>{
                           setDownloadingModel(m.id);
-                          try{await api.downloadModel(m.id);api.listModels().then(d=>{setRealModels(d.models||[]);setActiveModel(d.active||null);});}
-                          catch(e:any){customAlert(`Download failed: ${e.message}`);}
-                          finally{setDownloadingModel(null);}
-                        }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 14px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:downloadingModel===m.id?"wait":"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12,opacity:downloadingModel===m.id?.6:1}}>
-                          {downloadingModel===m.id?<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{animation:"livepulse 1s ease-in-out infinite"}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Downloading...</>
-                          :<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download</>}
+                          try{await api.downloadModel(m.id);}
+                          catch(e:any){customAlert(`Download failed: ${e.message}`);setDownloadingModel(null);}
+                        }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 14px",background:"var(--md-primary)",color:"var(--md-on-primary)",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:12}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          Download
                         </button>}
                         {m.installed&&!isActive&&<button onClick={async()=>{
                           try{await api.activateModel(m.id);api.listModels().then(d=>{setRealModels(d.models||[]);setActiveModel(d.active||null);});customAlert(`Switched to ${m.name}`);}

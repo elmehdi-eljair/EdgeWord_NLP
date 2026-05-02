@@ -609,6 +609,17 @@ async def download_model(model_id: str, auth: dict = Depends(verify_auth)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/v1/models/{model_id}/progress")
+async def model_progress(model_id: str, auth: dict = Depends(verify_auth)):
+    """Get download progress for a model."""
+    if not model_manager:
+        return {"status": "not_available"}
+    progress = model_manager.get_download_progress(model_id)
+    if not progress:
+        return {"status": "not_downloading"}
+    return progress
+
+
 @app.post("/v1/models/{model_id}/activate")
 async def activate_model(model_id: str, auth: dict = Depends(verify_auth)):
     """Switch the active model."""
