@@ -204,6 +204,9 @@
 /* ── Mobile ── */
 @media(max-width:767px){
   .hide-mobile{display:none!important}
+  /* Reduce message left padding on mobile */
+  article { padding-left: 36px !important; }
+  article .avatar-wrap { width: 28px !important; height: 28px !important; }
 }
 @media(min-width:768px){
   .hide-desktop{display:none!important}
