@@ -1905,43 +1905,58 @@ export default function Home(){
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14"/><polyline points="19 12 12 19 5 12"/></svg>
       </button>}
 
-      {/* Side actions — desktop only */}
-      <nav style={{position:"fixed",left:24,bottom:24,zIndex:45,display:"flex",flexDirection:"column",gap:0,alignItems:"flex-start"}} className="hide-mobile">
-        {[{l:"Settings",onClick:()=>openSettings("profile")},{l:"Model",onClick:()=>openSettings("model")},{l:"Knowledge",onClick:()=>openSettings("knowledge-full")},{l:"Skills",onClick:()=>openSettings("skills")},{l:"API Keys",onClick:()=>openSettings("keys")},{l:"Infrastructure",onClick:()=>setInfraOpen(true)},{l:"Sign out",onClick:()=>{customConfirm("Sign out?").then(ok=>{if(ok){api.logout();setAuthed(false);}})},danger:true}].map(a=>(
-          <a key={a.l} onClick={a.onClick} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",background:"transparent",border:0,borderRadius:999,fontFamily:"var(--google-sans)",fontSize:13,fontWeight:500,color:a.danger?"var(--md-error)":"var(--md-on-surface-variant)",cursor:"pointer",transition:"background .2s var(--ease)"}}
-            onMouseEnter={e=>e.currentTarget.style.background=a.danger?"var(--md-error-container)":"var(--md-surface-container-low)"}
-            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{a.l}</a>
+      {/* Side actions — icon-only, elevated */}
+      <nav style={{position:"fixed",left:16,bottom:100,zIndex:45,display:"flex",flexDirection:"column",gap:2,alignItems:"center"}} className="hide-mobile">
+        {[
+          {l:"Settings",icon:<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,onClick:()=>openSettings("profile")},
+          {l:"Model",icon:<><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/></>,onClick:()=>openSettings("model")},
+          {l:"Knowledge",icon:<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></>,onClick:()=>openSettings("knowledge-full")},
+          {l:"Skills",icon:<><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></>,onClick:()=>openSettings("skills")},
+          {l:"Keys",icon:<><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>,onClick:()=>openSettings("keys")},
+          {l:"Infra",icon:<><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>,onClick:()=>setInfraOpen(true)},
+          {l:"Sign out",icon:<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,onClick:()=>{customConfirm("Sign out?").then(ok=>{if(ok){api.logout();setAuthed(false);}})},danger:true},
+        ].map(a=>(
+          <button key={a.l} title={a.l} onClick={a.onClick} style={{width:36,height:36,borderRadius:10,background:"transparent",border:0,cursor:"pointer",color:a.danger?"var(--md-error)":"var(--md-on-surface-variant)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s var(--ease)"}}
+            onMouseEnter={e=>{e.currentTarget.style.background=a.danger?"var(--md-error-container)":"var(--md-surface-container-low)";}}
+            onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{a.icon}</svg>
+          </button>
         ))}
       </nav>
 
-      {/* Context indicator — fixed bottom-right, symmetric to left nav */}
+      {/* Context widget — fixed bottom-right, icon-only with filling bar */}
       {(()=>{
         const totalChars=messages.reduce((sum,m)=>sum+m.text.length,0);
-        const estTokens=Math.round(totalChars/4); // rough: 1 token ≈ 4 chars
+        const estTokens=Math.round(totalChars/4);
         const maxCtx=Number(localStorage.getItem("edgeword_context_window")||"4096");
         const pct=Math.min(100,Math.round((estTokens/maxCtx)*100));
         const color=pct>85?"var(--md-error)":pct>60?"var(--md-tertiary, #E8A317)":"var(--md-primary)";
-        return <div style={{position:"fixed",right:24,bottom:24,zIndex:45,display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}} className="hide-mobile">
-          {/* Clear context button */}
-          <button onClick={async()=>{
-            const ok=await customConfirm(`Clear conversation context?\n\n${messages.length} messages · ~${estTokens.toLocaleString()} tokens used (${pct}% of ${maxCtx.toLocaleString()})\n\nThis will start a fresh conversation.`);
+        return <div style={{position:"fixed",right:16,bottom:100,zIndex:45,display:"flex",flexDirection:"column",gap:4,alignItems:"center"}} className="hide-mobile">
+          {/* Clear context */}
+          <button title={`Clear context (${pct}% used)`} onClick={async()=>{
+            const ok=await customConfirm(`Clear conversation?\n\n${messages.length} messages · ${pct}% context used`);
             if(!ok)return;
-            await api.clearSession();
-            await api.clearConversation();
+            await api.clearSession();await api.clearConversation();
             setMessages([]);setSections([]);setLastSum(0);
-          }} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",background:"var(--md-surface-container-low)",border:"1px solid var(--md-outline-variant)",borderRadius:999,cursor:"pointer",transition:"all .2s var(--ease)"}}
-            onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";e.currentTarget.style.borderColor="var(--md-outline)";}}
-            onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";e.currentTarget.style.borderColor="var(--md-outline-variant)";}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--md-on-surface-variant)" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-            <span style={{fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-on-surface-variant)"}}>Clear context</span>
+          }} style={{width:36,height:36,borderRadius:10,background:"var(--md-surface-container-low)",border:"1px solid var(--md-outline-variant)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--md-on-surface-variant)",transition:"all .15s var(--ease)"}}
+            onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";}}
+            onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
           </button>
-          {/* Context saturation bar */}
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 14px",background:"var(--md-surface-container-low)",borderRadius:999,border:"1px solid var(--md-outline-variant)"}}>
-            <div style={{width:60,height:4,borderRadius:2,background:"var(--md-surface-container-highest)",overflow:"hidden"}}>
-              <div style={{height:"100%",borderRadius:2,background:color,width:`${pct}%`,transition:"width .5s var(--ease)"}}/>
-            </div>
-            <span style={{fontFamily:"var(--mono)",fontSize:10,color,fontWeight:600}}>{pct}%</span>
-            <span style={{fontFamily:"var(--mono)",fontSize:10,color:"var(--md-on-surface-variant)"}}>{estTokens.toLocaleString()}/{maxCtx.toLocaleString()}</span>
+          {/* Compact/summarize context */}
+          <button title="Compact conversation" onClick={async()=>{
+            const ok=await customConfirm("Summarize and compact the conversation to free context space?");
+            if(!ok)return;
+            /* TODO: implement context compaction */
+          }} style={{width:36,height:36,borderRadius:10,background:"var(--md-surface-container-low)",border:"1px solid var(--md-outline-variant)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--md-on-surface-variant)",transition:"all .15s var(--ease)"}}
+            onMouseEnter={e=>{e.currentTarget.style.background="var(--md-surface-container-high)";}}
+            onMouseLeave={e=>{e.currentTarget.style.background="var(--md-surface-container-low)";}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 3H3"/><path d="M21 21H3"/><path d="M12 8v8"/><path d="M8 12l4-4 4 4"/></svg>
+          </button>
+          {/* Context fill bar — vertical, fills bottom to top */}
+          <div style={{width:36,height:80,borderRadius:10,background:"var(--md-surface-container-low)",border:"1px solid var(--md-outline-variant)",overflow:"hidden",position:"relative",display:"flex",alignItems:"flex-end"}}>
+            <div style={{width:"100%",height:`${pct}%`,background:color,borderRadius:"0 0 9px 9px",transition:"height .8s var(--ease)",opacity:.5}}/>
+            <span style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontFamily:"var(--mono)",fontSize:9,fontWeight:700,color:"var(--md-on-surface)",opacity:.7}}>{pct}%</span>
           </div>
         </div>;
       })()}
