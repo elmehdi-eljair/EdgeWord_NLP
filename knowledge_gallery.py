@@ -134,6 +134,77 @@ GALLERY_PACKS = {
         "size_estimate": "~20 MB",
         "chunk_estimate": "~15K chunks",
     },
+    # ── Infrastructure & DevOps ──
+    "devops-code": {
+        "name": "DevOps & Infrastructure Code",
+        "description": "80K code instructions covering Docker, Kubernetes, CI/CD, shell scripting, cloud deployments, Ansible, Terraform, and infrastructure automation.",
+        "category": "Infrastructure",
+        "icon": "infra",
+        "hf_dataset": "nickrosh/Evol-Instruct-Code-80k-v1",
+        "hf_config": "default",
+        "hf_split": "train",
+        "text_fields": ["instruction", "output"],
+        "text_template": "Task: {instruction}\n\nSolution: {output}",
+        "max_rows": 20000,
+        "size_estimate": "~80 MB",
+        "chunk_estimate": "~25K chunks",
+    },
+    "k8s-cloud": {
+        "name": "Kubernetes & Cloud Platforms",
+        "description": "Advanced code and infrastructure patterns — Kubernetes manifests, Helm charts, GCP/AWS configs, container orchestration, microservices architecture.",
+        "category": "Infrastructure",
+        "icon": "infra",
+        "hf_dataset": "ise-uiuc/Magicoder-Evol-Instruct-110K",
+        "hf_config": "default",
+        "hf_split": "train",
+        "text_fields": ["instruction", "response"],
+        "text_template": "Q: {instruction}\n\nA: {response}",
+        "max_rows": 20000,
+        "size_estimate": "~100 MB",
+        "chunk_estimate": "~30K chunks",
+    },
+    "sysadmin-ops": {
+        "name": "Linux & System Administration",
+        "description": "System administration knowledge — Linux commands, shell scripting, networking, security, monitoring, troubleshooting, and server management.",
+        "category": "Infrastructure",
+        "icon": "infra",
+        "hf_dataset": "sahil2801/CodeAlpaca-20k",
+        "hf_config": "default",
+        "hf_split": "train",
+        "text_fields": ["instruction", "output"],
+        "text_template": "Task: {instruction}\n\nSolution: {output}",
+        "max_rows": 20000,
+        "size_estimate": "~30 MB",
+        "chunk_estimate": "~20K chunks",
+    },
+    "infra-general": {
+        "name": "Infrastructure Engineering",
+        "description": "Broad infrastructure knowledge — databases, APIs, deployment strategies, performance tuning, architecture patterns, DevOps practices, and operational excellence.",
+        "category": "Infrastructure",
+        "icon": "infra",
+        "hf_dataset": "databricks/databricks-dolly-15k",
+        "hf_config": "default",
+        "hf_split": "train",
+        "text_fields": ["instruction", "context", "response"],
+        "text_template": "Q: {instruction}\nContext: {context}\n\nA: {response}",
+        "max_rows": 15000,
+        "size_estimate": "~40 MB",
+        "chunk_estimate": "~18K chunks",
+    },
+    "code-feedback": {
+        "name": "Code Review & Debugging",
+        "description": "Code review conversations, debugging strategies, performance optimization, security patterns, and best practices across all languages and infrastructure tools.",
+        "category": "Infrastructure",
+        "icon": "code",
+        "hf_dataset": "m-a-p/Code-Feedback",
+        "hf_config": "default",
+        "hf_split": "train",
+        "text_fields": ["messages"],
+        "text_template": "{messages}",
+        "max_rows": 15000,
+        "size_estimate": "~60 MB",
+        "chunk_estimate": "~20K chunks",
+    },
 }
 
 
@@ -378,12 +449,24 @@ class KnowledgeGalleryManager:
             # Build text from template or concatenate fields
             if template:
                 try:
-                    # Handle special fields like 'choices' which may be lists
+                    # Handle special fields — lists, dicts, chat messages
                     fmt_row = {}
                     for f in text_fields:
                         val = row.get(f, "")
                         if isinstance(val, list):
-                            val = ", ".join(str(v) for v in val)
+                            # Chat messages: [{"role":"user","content":"..."},...]
+                            if val and isinstance(val[0], dict) and ("content" in val[0] or "value" in val[0]):
+                                parts = []
+                                for msg in val:
+                                    role = msg.get("role", msg.get("from", ""))
+                                    content = msg.get("content", msg.get("value", ""))
+                                    if content:
+                                        parts.append(f"{role}: {content}" if role else str(content))
+                                val = "\n".join(parts)
+                            else:
+                                val = ", ".join(str(v) for v in val)
+                        elif isinstance(val, dict):
+                            val = json.dumps(val)
                         elif val is None:
                             val = ""
                         fmt_row[f] = val

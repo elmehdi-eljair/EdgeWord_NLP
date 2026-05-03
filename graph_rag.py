@@ -253,8 +253,8 @@ class EntityGraphBuilder:
 class GraphRAG:
     """Seed-and-expand retrieval using the entity co-occurrence graph."""
 
-    SEED_BOOST = 100.0
-    BLEND_WEIGHT = 2.0
+    SEED_BOOST = 30.0
+    HYBRID_TOP_BOOST = 500.0  # top-3 hybrid results get massive protection
 
     def __init__(self, rag_engine, graph_index_dir: str = "."):
         self.rag = rag_engine
@@ -350,11 +350,19 @@ class GraphRAG:
                 for chunk_src in info["chunks"]:
                     chunk_scores[chunk_src] = chunk_scores.get(chunk_src, 0) + w
 
-        # Step 5: Blend with hybrid scores
+        # Step 5: Position-aware blend — protect top hybrid ranks, graph adds at deeper ranks
         hybrid_top = self.rag.retrieve(query, top_k=20)
         for rank, r in enumerate(hybrid_top):
             src = r["source"]
-            chunk_scores[src] = chunk_scores.get(src, 0) + (20 - rank) * self.BLEND_WEIGHT
+            if rank < 3:
+                # Top-3 hybrid results are strongly protected
+                chunk_scores[src] = chunk_scores.get(src, 0) + self.HYBRID_TOP_BOOST * (3 - rank)
+            elif rank < 10:
+                # Ranks 4-10: moderate hybrid signal, graph can influence
+                chunk_scores[src] = chunk_scores.get(src, 0) + 20 - rank
+            else:
+                # Ranks 11-20: weak hybrid signal, graph dominates
+                chunk_scores[src] = chunk_scores.get(src, 0) + (20 - rank) * 0.5
 
         # Step 6: Get top-K chunk sources, then retrieve full chunk data
         top_sources = sorted(chunk_scores, key=chunk_scores.get, reverse=True)[:top_k]
