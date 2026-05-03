@@ -1670,7 +1670,39 @@ export default function Home(){
     finally{setGenerating(false);setWaitingFirst(false);}
   },[input,generating,chatFiles,reasoningOn,autoModeOn,webSearchOn]);
 
-  const toggleRec=async()=>{if(recording){mediaRef.current?.stop();setRecording(false);return;}try{const s=await navigator.mediaDevices.getUserMedia({audio:true});const rec=new MediaRecorder(s);const ch:Blob[]=[];rec.ondataavailable=e=>ch.push(e.data);rec.onstop=async()=>{s.getTracks().forEach(t=>t.stop());try{const r=await api.transcribe(new File([new Blob(ch,{type:"audio/webm"})],"r.webm",{type:"audio/webm"}));if(r.text)setInput(p=>p+(p?" ":"")+r.text);}catch{}};rec.start();mediaRef.current=rec;setRecording(true);}catch{}};
+  const [recElapsed,setRecElapsed]=useState(0);
+  const [transcribing,setTranscribing]=useState(false);
+  const recTimerRef=useRef<any>(null);
+
+  const toggleRec=async()=>{
+    if(recording){
+      mediaRef.current?.stop();
+      setRecording(false);
+      setTranscribing(true);
+      if(recTimerRef.current)clearInterval(recTimerRef.current);
+      return;
+    }
+    try{
+      const s=await navigator.mediaDevices.getUserMedia({audio:true});
+      const rec=new MediaRecorder(s);
+      const ch:Blob[]=[];
+      rec.ondataavailable=e=>ch.push(e.data);
+      rec.onstop=async()=>{
+        s.getTracks().forEach(t=>t.stop());
+        try{
+          const r=await api.transcribe(new File([new Blob(ch,{type:"audio/webm"})],"r.webm",{type:"audio/webm"}));
+          if(r.text)setInput(p=>p+(p?" ":"")+r.text);
+        }catch{}
+        setTranscribing(false);
+      };
+      rec.start();
+      mediaRef.current=rec;
+      setRecording(true);
+      setRecElapsed(0);
+      const t0=Date.now();
+      recTimerRef.current=setInterval(()=>setRecElapsed(Math.floor((Date.now()-t0)/1000)),1000);
+    }catch{setTranscribing(false);}
+  };
 
   const latestSum=sections.length?sections[sections.length-1].title:null;
 
@@ -1963,7 +1995,7 @@ export default function Home(){
 
       {/* Composer — fixed bottom */}
       <div style={{position:"fixed",left:"50%",bottom:0,transform:"translateX(-50%)",width:"100%",maxWidth:960,padding:"16px 16px 24px",background:`linear-gradient(to top,var(--md-surface) 0%,var(--md-surface) 65%,transparent 100%)`,zIndex:40}} className="pb-safe">
-        <div style={{background:"var(--md-surface-container)",border:"1px solid transparent",borderRadius:28,transition:"all .2s var(--ease)",overflow:"hidden"}}>
+        <div style={{background:recording?"color-mix(in srgb, var(--md-error) 4%, var(--md-surface-container))":"var(--md-surface-container)",border:`1px solid ${recording?"var(--md-error-container)":"transparent"}`,borderRadius:28,transition:"all .3s var(--ease)",overflow:"hidden"}}>
           {/* Attached files preview */}
           {chatFiles.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"10px 16px 0"}}>
             {chatFiles.map((f,i)=><span key={i} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",background:"var(--md-primary-container)",borderRadius:999,fontFamily:"var(--google-sans)",fontSize:12,fontWeight:500,color:"var(--md-on-primary-container)"}}>
@@ -1975,10 +2007,30 @@ export default function Home(){
             </span>)}
           </div>}
           <div style={{display:"flex",alignItems:"flex-end",gap:10,padding:"var(--composer-pad)"}}>
-          <textarea ref={taRef} value={input} onChange={e=>setInput(e.target.value)}
+          {/* Recording state — replaces textarea */}
+          {(recording||transcribing)?
+            <div style={{flex:1,display:"flex",alignItems:"center",gap:12,padding:"8px 0",minHeight:24}}>
+              {recording&&<>
+                {/* Live recording indicator */}
+                <div style={{width:10,height:10,borderRadius:"50%",background:"var(--md-error)",animation:"livepulse 1s infinite",flexShrink:0}}/>
+                {/* Audio wave bars */}
+                <div style={{display:"flex",gap:2,alignItems:"center",height:24}}>
+                  {[0,1,2,3,4,5,6,7].map(i=><span key={i} style={{width:3,borderRadius:1.5,background:"var(--md-error)",animation:`think-wave 0.8s ease-in-out ${i*0.1}s infinite`,opacity:.7}}/>)}
+                </div>
+                <span style={{fontFamily:"var(--google-sans)",fontSize:14,color:"var(--md-error)",fontWeight:500}}>Listening...</span>
+                <span style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--md-on-surface-variant)",marginLeft:"auto"}}>{Math.floor(recElapsed/60)}:{(recElapsed%60).toString().padStart(2,"0")}</span>
+              </>}
+              {transcribing&&<>
+                <div style={{display:"flex",gap:3,alignItems:"center"}}>
+                  {[0,1,2].map(i=><span key={i} style={{width:6,height:6,borderRadius:"50%",background:"var(--md-primary)",animation:`think-dot 1.4s ease-in-out ${i*0.2}s infinite`}}/>)}
+                </div>
+                <span style={{fontFamily:"var(--google-sans)",fontSize:14,color:"var(--md-primary)",fontWeight:500}}>Transcribing...</span>
+              </>}
+            </div>
+          :<textarea ref={taRef} value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}
             placeholder="Message EdgeWord..."
-            rows={1} style={{flex:1,background:"transparent",border:0,outline:0,resize:"none",fontFamily:"var(--sans)",fontSize:15,lineHeight:1.5,color:"var(--md-on-surface)",fontWeight:400,minHeight:24,maxHeight:200,padding:"8px 0"}}/>
+            rows={1} style={{flex:1,background:"transparent",border:0,outline:0,resize:"none",fontFamily:"var(--sans)",fontSize:15,lineHeight:1.5,color:"var(--md-on-surface)",fontWeight:400,minHeight:24,maxHeight:200,padding:"8px 0"}}/>}
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             {/* Mobile: expand button to show actions */}
             <button onClick={()=>setMobileActionsOpen(!mobileActionsOpen)} className="hide-desktop"
@@ -1998,8 +2050,12 @@ export default function Home(){
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
               </button>
-              <button onClick={toggleRec} title="voice" style={{width:36,height:36,borderRadius:"50%",background:recording?"var(--md-error-container)":"transparent",border:0,cursor:"pointer",color:recording?"var(--md-error)":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v4"/></svg>
+              <button onClick={toggleRec} title={recording?"Stop recording":"Voice input"} style={{width:36,height:36,borderRadius:"50%",background:recording?"var(--md-error)":transcribing?"var(--md-primary)":"transparent",border:0,cursor:transcribing?"wait":"pointer",color:recording?"#fff":transcribing?"#fff":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)",animation:recording?"livepulse 2s infinite":"none"}}
+                onMouseEnter={e=>{if(!recording&&!transcribing)e.currentTarget.style.background="var(--md-surface-container-high)";}}
+                onMouseLeave={e=>{if(!recording&&!transcribing)e.currentTarget.style.background="transparent";}}>
+                {recording?<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                :transcribing?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                :<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v4"/></svg>}
               </button>
               {/* Web search toggle */}
               <button onClick={()=>setWebSearchOn(!webSearchOn)} title={webSearchOn?"Web search ON":"Enable web search"}
