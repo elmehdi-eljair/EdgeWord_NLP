@@ -2037,8 +2037,8 @@ export default function Home(){
               style={{width:36,height:36,borderRadius:"50%",background:mobileActionsOpen?"var(--md-surface-container-high)":"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{transform:mobileActionsOpen?"rotate(45deg)":"rotate(0)",transition:"transform .2s"}}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
-            {/* Desktop: always show all action icons */}
-            <div className="hide-mobile" style={{display:"flex",alignItems:"center",gap:4}}>
+            {/* Desktop action icons — hidden during recording */}
+            {!recording&&!transcribing&&<div className="hide-mobile" style={{display:"flex",alignItems:"center",gap:4}}>
               <button onClick={()=>{const next=!reasoningOn;setReasoningOn(next);}} title={reasoningOn?"Reasoning ON":"Enable reasoning"}
                 style={{width:36,height:36,borderRadius:"50%",background:reasoningOn?"var(--md-primary)":"transparent",border:0,cursor:"pointer",color:reasoningOn?"#fff":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
                 onMouseEnter={e=>{if(!reasoningOn)e.currentTarget.style.background="var(--md-surface-container-high)";}}
@@ -2050,25 +2050,27 @@ export default function Home(){
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
               </button>
-              <button onClick={toggleRec} title={recording?"Stop recording":"Voice input"} style={{width:36,height:36,borderRadius:"50%",background:recording?"var(--md-error)":transcribing?"var(--md-primary)":"transparent",border:0,cursor:transcribing?"wait":"pointer",color:recording?"#fff":transcribing?"#fff":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)",animation:recording?"livepulse 2s infinite":"none"}}
-                onMouseEnter={e=>{if(!recording&&!transcribing)e.currentTarget.style.background="var(--md-surface-container-high)";}}
-                onMouseLeave={e=>{if(!recording&&!transcribing)e.currentTarget.style.background="transparent";}}>
-                {recording?<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-                :transcribing?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                :<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v4"/></svg>}
+              <button onClick={toggleRec} title="Voice input" style={{width:36,height:36,borderRadius:"50%",background:"transparent",border:0,cursor:"pointer",color:"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"background .2s var(--ease)"}}
+                onMouseEnter={e=>e.currentTarget.style.background="var(--md-surface-container-high)"}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 19v4"/></svg>
               </button>
-              {/* Web search toggle */}
               <button onClick={()=>setWebSearchOn(!webSearchOn)} title={webSearchOn?"Web search ON":"Enable web search"}
                 style={{width:36,height:36,borderRadius:"50%",background:webSearchOn?"var(--md-tertiary)":"transparent",border:0,cursor:"pointer",color:webSearchOn?"#fff":"var(--md-on-surface-variant)",display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .2s var(--ease)"}}
                 onMouseEnter={e=>{if(!webSearchOn)e.currentTarget.style.background="var(--md-surface-container-high)";}}
                 onMouseLeave={e=>{if(!webSearchOn)e.currentTarget.style.background="transparent";}}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
               </button>
-            </div>
-            <button onClick={()=>send()} disabled={!input.trim()&&!chatFiles.length} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px",background:(input.trim()||chatFiles.length)?"var(--md-primary)":"var(--md-surface-container-high)",color:(input.trim()||chatFiles.length)?"var(--md-on-primary)":"var(--md-on-surface-variant)",border:0,borderRadius:999,cursor:(input.trim()||chatFiles.length)?"pointer":"default",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,letterSpacing:".01em",transition:"all .2s var(--ease)",boxShadow:(input.trim()||chatFiles.length)?`0 1px 2px 0 var(--md-shadow),0 1px 3px 1px var(--md-shadow-2)`:"none"}}>
+            </div>}
+            {/* Recording: send button (stops recording + transcribes) */}
+            {recording&&<button onClick={toggleRec} title="Send voice" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px",background:"var(--md-error)",color:"#fff",border:0,borderRadius:999,cursor:"pointer",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,transition:"all .2s var(--ease)",boxShadow:"0 1px 2px 0 var(--md-shadow),0 1px 3px 1px var(--md-shadow-2)"}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a1 1 0 0 0-1.39 1.18L4.5 11l8 1-8 1-2.49 6.22a1 1 0 0 0 1.39 1.18z"/></svg>
+            </button>}
+            {/* Normal send button — hidden during recording/transcribing */}
+            {!recording&&!transcribing&&<button onClick={()=>send()} disabled={!input.trim()&&!chatFiles.length} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px",background:(input.trim()||chatFiles.length)?"var(--md-primary)":"var(--md-surface-container-high)",color:(input.trim()||chatFiles.length)?"var(--md-on-primary)":"var(--md-on-surface-variant)",border:0,borderRadius:999,cursor:(input.trim()||chatFiles.length)?"pointer":"default",fontFamily:"var(--google-sans)",fontWeight:500,fontSize:14,letterSpacing:".01em",transition:"all .2s var(--ease)",boxShadow:(input.trim()||chatFiles.length)?`0 1px 2px 0 var(--md-shadow),0 1px 3px 1px var(--md-shadow-2)`:"none"}}>
               <span className="hide-mobile">Send</span>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a1 1 0 0 0-1.39 1.18L4.5 11l8 1-8 1-2.49 6.22a1 1 0 0 0 1.39 1.18z"/></svg>
-            </button>
+            </button>}
           </div>
         </div>
         {/* Mobile actions tray — slides open */}
