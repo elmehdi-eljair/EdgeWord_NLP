@@ -21,6 +21,7 @@ import os
 import sys
 import json
 import time
+import numpy as np
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -73,6 +74,7 @@ class ChatResponse(BaseModel):
     skill_used: str | None = None
     web_results: list[dict] = []
     web_suggest: bool = False
+    knowledge_gap: dict | None = None  # {"message": "...", "suggested_pack": {...}} when RAG has no match
 
 class ClassifyRequest(BaseModel):
     text: str = Field(..., description="Text to classify")
@@ -144,12 +146,116 @@ web_search_engine = None
 import threading
 _llm_lock = threading.Lock()  # Global lock — llama.cpp is NOT thread-safe
 skill_engine = None
+gallery_manager = None
+graph_rag = None  # GraphRAG instance
 stt_engine = None
 tts_engine = None
 ocr_engine = None
 img_classifier = None
 sessions = {}  # session_id -> conversation history
 start_time = None
+
+# ── Log capture ring buffer ──
+import logging
+import collections
+
+_log_buffer: collections.deque = collections.deque(maxlen=2000)
+_log_id_counter = 0
+
+
+class BufferLogHandler(logging.Handler):
+    """Captures log records into a ring buffer for the /v1/logs endpoint."""
+    def emit(self, record):
+        global _log_id_counter
+        _log_id_counter += 1
+        try:
+            msg = self.format(record)
+        except Exception:
+            msg = str(record.getMessage())
+        _log_buffer.append({
+            "id": _log_id_counter,
+            "timestamp": record.created,
+            "level": record.levelname,
+            "source": record.name,
+            "message": msg,
+        })
+
+
+# Install handler on root logger + uvicorn
+_buf_handler = BufferLogHandler()
+_buf_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_buf_handler)
+logging.getLogger().setLevel(logging.INFO)
+for _ln in ["uvicorn", "uvicorn.access", "uvicorn.error", "edgeword"]:
+    logging.getLogger(_ln).addHandler(_buf_handler)
+_app_log = logging.getLogger("edgeword")
+
+
+def _detect_knowledge_gap(message: str, rag_results: list, rag_has_context: bool) -> dict | None:
+    """Detect if a query lacks knowledge coverage and suggest a gallery pack."""
+    if rag_has_context:
+        return None  # RAG found relevant content — no gap
+
+    # Skip for simple greetings/chat
+    msg_lower = message.lower()
+    if len(message.split()) < 4:
+        return None
+    skip_words = {"hello", "hi", "hey", "thanks", "ok", "bye", "how are you"}
+    if any(w in msg_lower for w in skip_words):
+        return None
+
+    # Try to match the query against gallery pack descriptions
+    if not gallery_manager:
+        return None
+
+    from knowledge_gallery import GALLERY_PACKS
+    best_pack = None
+    best_score = 0
+
+    # Use the RAG embedder to match query against pack descriptions
+    if rag_engine and rag_engine.embedder:
+        try:
+            query_vec = rag_engine.embedder.embed([message])
+            pack_list = []
+            pack_descs = []
+            for pid, info in GALLERY_PACKS.items():
+                meta = gallery_manager._load_meta(pid)
+                if meta and meta.get("enabled"):
+                    continue  # Pack already installed and enabled — gap is in content quality, not coverage
+                pack_list.append((pid, info))
+                pack_descs.append(f"{info['name']}: {info['description']}")
+
+            if pack_descs:
+                desc_vecs = rag_engine.embedder.embed(pack_descs)
+                # Cosine similarity (vectors are already normalized)
+                scores = (query_vec @ desc_vecs.T)[0]
+                best_idx = int(scores.argmax())
+                best_score = float(scores[best_idx])
+
+                if best_score > 0.35:  # Decent match to a pack description
+                    pid, info = pack_list[best_idx]
+                    best_pack = {
+                        "id": pid,
+                        "name": info["name"],
+                        "description": info["description"],
+                        "category": info["category"],
+                    }
+        except Exception:
+            pass
+
+    if best_pack:
+        return {
+            "message": f"I don't have deep knowledge about this topic yet. "
+                       f"The {best_pack['name']} pack could help me give you a much better answer.",
+            "suggested_pack": best_pack,
+        }
+    else:
+        # Generic gap — no specific pack matches
+        return {
+            "message": "My knowledge on this topic is limited. "
+                       "You can explore the Knowledge Gallery to install domain-specific packs.",
+            "suggested_pack": None,
+        }
 
 
 def get_session(session_id: str):
@@ -256,7 +362,7 @@ async def lifespan(app: FastAPI):
     # Model manager
     global model_manager
     from model_manager import ModelManager
-    model_manager = ModelManager(str(Path(__file__).parent / "models"))
+    model_manager = ModelManager(str(Path(__file__).parent / "models"), on_notify=push_notification)
     print(f"  Model manager: {len(model_manager.list_models())} models available")
 
     # Web search
@@ -276,6 +382,46 @@ async def lifespan(app: FastAPI):
             skill_engine = SkillEngine(rag_engine.embedder)
         except Exception as e:
             print(f"  Skills: disabled ({e})")
+
+    # Knowledge Gallery
+    global gallery_manager
+    if rag_engine and hasattr(rag_engine, 'embedder'):
+        try:
+            from knowledge_gallery import KnowledgeGalleryManager
+            packs_dir = str(Path(__file__).parent / "knowledge_packs")
+            def _rebuild_rag():
+                if rag_engine and gallery_manager:
+                    rag_engine.rebuild_composite_index(gallery_manager)
+                # Rebuild graph in background (non-blocking)
+                import threading
+                threading.Thread(target=_rebuild_graph, daemon=True).start()
+            gallery_manager = KnowledgeGalleryManager(packs_dir, rag_engine.embedder, on_notify=push_notification, on_complete=_rebuild_rag)
+            enabled = sum(1 for p in gallery_manager.list_packs() if p["enabled"])
+            total_packs = len(gallery_manager.list_packs())
+            if enabled > 0:
+                count = rag_engine.rebuild_composite_index(gallery_manager)
+                print(f"  Knowledge Gallery: {enabled}/{total_packs} packs enabled, {count} total chunks")
+            else:
+                print(f"  Knowledge Gallery: {total_packs} packs available")
+        except Exception as e:
+            print(f"  Knowledge Gallery: disabled ({e})")
+
+    # Graph RAG (Approach B — embedding-based entity graph)
+    global graph_rag
+    if rag_engine:
+        try:
+            from graph_rag import GraphRAG
+            # Check if pre-built index files exist
+            idx_files = list(Path(".").glob("*_index.json"))
+            if idx_files:
+                graph_rag = GraphRAG(rag_engine, graph_index_dir=".")
+                stats = graph_rag.get_stats()
+                print(f"  Knowledge Graph: {stats['entities']} entities, {stats['edges']} edges (loaded from index)")
+            else:
+                print(f"  Knowledge Graph: no index found — run re-embed or install a pack to build")
+                graph_rag = GraphRAG(rag_engine, graph_index_dir=".")  # empty but ready
+        except Exception as e:
+            print(f"  Knowledge Graph: disabled ({e})")
 
     # Speech-to-Text
     try:
@@ -316,6 +462,13 @@ async def lifespan(app: FastAPI):
     print(f"  Image CLF:    {'ready' if img_classifier else 'disabled'}")
     print(f"  API Keys:     {len([k for k in key_manager.list_keys() if k['is_active']])} active\n")
 
+    push_notification(
+        "INFO", "Server started",
+        f"EdgeWord ready — {rag_engine.doc_count if rag_engine else 0} knowledge chunks, "
+        f"model: {Path(compute_path.model_path).stem if compute_path else 'none'}.",
+        "", "info",
+    )
+
     yield
 
     # Cleanup
@@ -339,6 +492,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    t0 = time.time()
+    response = await call_next(request)
+    dt = round((time.time() - t0) * 1000)
+    path = request.url.path
+    if path not in ("/v1/health", "/v1/logs"):  # Skip noisy endpoints
+        _app_log.info(f"{request.method} {path} → {response.status_code} ({dt}ms)")
+    return response
+
 
 # Global exception handler — return explicit error details instead of generic 500
 @app.exception_handler(Exception)
@@ -372,6 +537,31 @@ async def health():
         model=os.path.basename(compute_path.model_path) if compute_path else None,
         uptime_s=round(time.time() - start_time, 1),
     )
+
+
+@app.get("/v1/logs")
+async def get_logs(
+    auth: dict = Depends(verify_auth),
+    after: int = 0,
+    level: str = "",
+    source: str = "",
+    search: str = "",
+    limit: int = 200,
+):
+    """Get recent logs with optional filtering. Supports long-polling via 'after' param."""
+    logs = list(_log_buffer)
+    if after > 0:
+        logs = [l for l in logs if l["id"] > after]
+    if level:
+        levels = set(level.upper().split(","))
+        logs = [l for l in logs if l["level"] in levels]
+    if source:
+        logs = [l for l in logs if source.lower() in l["source"].lower()]
+    if search:
+        s = search.lower()
+        logs = [l for l in logs if s in l["message"].lower()]
+    logs = logs[-limit:]
+    return {"logs": logs, "total": len(_log_buffer)}
 
 
 class AuthRequest(BaseModel):
@@ -504,7 +694,23 @@ async def upload_knowledge(
     # Re-index if RAG engine exists
     if rag_engine:
         count = rag_engine.load_directory(str(docs_dir))
+        # Rebuild composite index to include knowledge packs
+        if gallery_manager:
+            rag_engine.rebuild_composite_index(gallery_manager)
+        # Update graph with new user docs in background
+        import threading
+        threading.Thread(target=_rebuild_graph, daemon=True).start()
+        push_notification(
+            "SUCCESS", "Knowledge indexed",
+            f"{file.filename} uploaded — {count} chunks indexed. Graph updating.",
+            "knowledge-full", "upload",
+        )
         return {"status": "uploaded", "file": file.filename, "size": len(content), "total_chunks": count}
+    push_notification(
+        "INFO", "File uploaded",
+        f"{file.filename} saved. Restart server to index.",
+        "knowledge-full", "upload",
+    )
     return {"status": "uploaded", "file": file.filename, "size": len(content), "note": "restart server to index"}
 
 
@@ -519,41 +725,148 @@ async def delete_knowledge(filename: str, auth: dict = Depends(verify_auth)):
     # Re-index
     if rag_engine:
         rag_engine.load_directory(str(docs_dir))
+    push_notification(
+        "INFO", "Document removed",
+        f"{filename} deleted from knowledge base.",
+        "knowledge-full", "delete",
+    )
     return {"status": "deleted", "file": filename}
 
 
-# ── Notifications endpoint ──
+# ── Notifications pipeline (SQLite-persisted) ──
+
+import sqlite3
+
+_notif_db_path = str(Path(__file__).parent / "notifications.db")
+_notif_lock = threading.Lock()
+
+
+def _notif_db():
+    """Get a thread-local SQLite connection."""
+    conn = sqlite3.connect(_notif_db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT DEFAULT '',
+        link TEXT DEFAULT '',
+        icon TEXT DEFAULT '',
+        read INTEGER DEFAULT 0,
+        timestamp REAL NOT NULL
+    )""")
+    conn.commit()
+    return conn
+
+
+# Init DB on import
+_notif_db().close()
+
+
+def push_notification(
+    type: str,       # SUCCESS, ERROR, INFO, WARNING
+    title: str,
+    body: str,
+    link: str = "",
+    icon: str = "",
+):
+    """Push a notification to the persistent store."""
+    with _notif_lock:
+        conn = _notif_db()
+        conn.execute(
+            "INSERT INTO notifications (type, title, body, link, icon, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            (type, title, body, link, icon, time.time()),
+        )
+        # Keep last 200
+        conn.execute("DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY id DESC LIMIT 200)")
+        conn.commit()
+        conn.close()
+
 
 @app.get("/v1/notifications")
 async def get_notifications(auth: dict = Depends(verify_auth)):
-    """Get notifications for the current user."""
-    # Build notifications from recent system events
-    notifications = []
-    if health:
-        h = await health()
-        notifications.append({
-            "id": "sys-model",
-            "type": "INFO",
-            "text": f"Model {h.model or 'unknown'} is active.",
-            "timestamp": time.time(),
-        })
-    if rag_engine and rag_engine.doc_count > 0:
-        notifications.append({
-            "id": "sys-rag",
-            "type": "INFO",
-            "text": f"Knowledge base: {rag_engine.doc_count} chunks indexed.",
-            "timestamp": time.time(),
-        })
-    if response_cache:
-        stats = response_cache.stats()
-        if stats["total_hits"] > 0:
-            notifications.append({
-                "id": "sys-cache",
-                "type": "INFO",
-                "text": f"Cache: {stats['entries']} entries, {stats['total_hits']} hits.",
-                "timestamp": time.time(),
+    """Get all notifications (newest first) + active operations."""
+    with _notif_lock:
+        conn = _notif_db()
+        rows = conn.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT 100").fetchall()
+        unread = conn.execute("SELECT COUNT(*) FROM notifications WHERE read = 0").fetchone()[0]
+        conn.close()
+
+    notifications = [dict(r) for r in rows]
+
+    # Gather active operations
+    operations = []
+    if model_manager:
+        for mid, prog in dict(model_manager.downloading).items():
+            from model_manager import AVAILABLE_MODELS
+            name = AVAILABLE_MODELS.get(mid, {}).get("name", mid)
+            operations.append({
+                "id": f"dl-{mid}",
+                "type": "download",
+                "title": f"Downloading {name}",
+                "percent": prog.get("percent", 0),
+                "downloaded_mb": prog.get("downloaded_mb", 0),
+                "total_mb": prog.get("total_mb", 0),
+                "speed_mbps": prog.get("speed_mbps", 0),
+                "status": prog.get("status", "downloading"),
+                "link": "model",
             })
-    return {"notifications": notifications}
+
+    # Gallery installs
+    if gallery_manager:
+        for pid, prog in dict(gallery_manager.installing).items():
+            phase = prog.get("phase", "downloading")
+            phase_label = {"downloading": "Downloading", "extracting": "Extracting", "embedding": "Embedding", "saving": "Saving"}.get(phase, phase.title())
+            operations.append({
+                "id": f"gallery-{pid}",
+                "type": "knowledge_install",
+                "title": f"Installing {prog.get('name', pid)}",
+                "percent": prog.get("percent", 0),
+                "phase": phase,
+                "phase_label": phase_label,
+                "detail": prog.get("detail", ""),
+                "status": prog.get("status", "processing"),
+                "link": "knowledge-full",
+            })
+
+    # Re-embed operation
+    if _reembed_progress and _reembed_progress.get("status") == "processing":
+        operations.append({
+            "id": "reembed",
+            "type": "reembed",
+            "title": f"Re-embedding with {_reembed_progress.get('model', '?')}",
+            "percent": _reembed_progress.get("percent", 0),
+            "phase": _reembed_progress.get("phase", ""),
+            "phase_label": _reembed_progress.get("current_pack", "Processing"),
+            "detail": _reembed_progress.get("detail", ""),
+            "status": "processing",
+            "link": "model",
+        })
+
+    return {"notifications": notifications, "unread": unread, "operations": operations}
+
+
+@app.post("/v1/notifications/read")
+async def mark_notifications_read(auth: dict = Depends(verify_auth)):
+    """Mark all notifications as read."""
+    with _notif_lock:
+        conn = _notif_db()
+        conn.execute("UPDATE notifications SET read = 1 WHERE read = 0")
+        conn.commit()
+        conn.close()
+    return {"status": "ok"}
+
+
+@app.delete("/v1/notifications")
+async def clear_notifications(auth: dict = Depends(verify_auth)):
+    """Clear all notifications."""
+    with _notif_lock:
+        conn = _notif_db()
+        conn.execute("DELETE FROM notifications")
+        conn.commit()
+        conn.close()
+    return {"status": "cleared"}
 
 
 # ── API Keys management via API ──
@@ -628,9 +941,422 @@ async def activate_model(model_id: str, auth: dict = Depends(verify_auth)):
     try:
         with _llm_lock:
             result = model_manager.switch_model(model_id, compute_path)
+        push_notification(
+            "SUCCESS", f"Switched to {result.get('model', model_id)}",
+            "Model loaded and ready for inference.",
+            "model", "switch",
+        )
+        return result
+    except Exception as e:
+        push_notification(
+            "ERROR", f"Model switch failed",
+            str(e), "model", "error",
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Skills management endpoints ──
+
+@app.get("/v1/skills")
+async def list_skills(auth: dict = Depends(verify_auth)):
+    """List all skills (built-in + custom)."""
+    if not skill_engine:
+        return {"skills": [], "total": 0}
+    skills = skill_engine.list_all()
+    return {"skills": skills, "total": len(skills)}
+
+
+@app.post("/v1/skills")
+async def create_skill(request: Request, auth: dict = Depends(verify_auth)):
+    """Create a custom skill."""
+    if not skill_engine:
+        raise HTTPException(status_code=503, detail="Skills engine not available")
+    body = await request.json()
+    for field in ["name", "description", "system_prompt"]:
+        if not body.get(field):
+            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+    try:
+        result = skill_engine.create_skill(body)
+        push_notification("SUCCESS", f"Skill created: {body['name']}", body["description"][:80], "", "info")
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/v1/skills/{skill_id}")
+async def update_skill(skill_id: str, request: Request, auth: dict = Depends(verify_auth)):
+    """Update a custom skill."""
+    if not skill_engine:
+        raise HTTPException(status_code=503, detail="Skills engine not available")
+    body = await request.json()
+    try:
+        return skill_engine.update_skill(skill_id, body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/v1/skills/{skill_id}")
+async def delete_skill(skill_id: str, auth: dict = Depends(verify_auth)):
+    """Delete a custom skill."""
+    if not skill_engine:
+        raise HTTPException(status_code=503, detail="Skills engine not available")
+    try:
+        result = skill_engine.delete_skill(skill_id)
+        push_notification("INFO", "Skill deleted", f"Skill '{skill_id}' removed.", "", "delete")
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/v1/skills/{skill_id}/toggle")
+async def toggle_skill(skill_id: str, request: Request, auth: dict = Depends(verify_auth)):
+    """Enable or disable a custom skill."""
+    if not skill_engine:
+        raise HTTPException(status_code=503, detail="Skills engine not available")
+    body = await request.json()
+    try:
+        return skill_engine.toggle_skill(skill_id, body.get("enabled", True))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Embedding model endpoints ──
+
+@app.get("/v1/embeddings")
+async def list_embedding_models(auth: dict = Depends(verify_auth)):
+    """List available embedding models with active status."""
+    from rag import EMBEDDING_MODELS, get_configured_model
+    active = rag_engine.embedder.model_id if rag_engine else get_configured_model()
+    models = []
+    for mid, info in EMBEDDING_MODELS.items():
+        models.append({
+            "id": mid,
+            "name": info["name"],
+            "dims": info["dims"],
+            "description": info["description"],
+            "size": info["size"],
+            "quality": info["quality"],
+            "speed": info["speed"],
+            "active": mid == active,
+            "available": info.get("available", True),
+        })
+    return {"models": models, "active": active}
+
+
+_reembed_progress: dict | None = None  # global progress tracker for re-embed operation
+
+
+def _rebuild_graph():
+    """Rebuild the entity graph from all installed knowledge packs.
+    Called after re-embedding, pack install/uninstall, embedding model switch."""
+    global graph_rag
+    if not rag_engine or not gallery_manager:
+        return
+    try:
+        from graph_rag import EntityGraphBuilder, GraphRAG
+        import shutil
+        # Clear old graph
+        graph_path = str(Path(__file__).parent / "knowledge_graph")
+        for f in Path(".").glob("*_index.json"):
+            f.unlink()
+        if Path(graph_path).exists():
+            shutil.rmtree(graph_path)
+
+        builder = EntityGraphBuilder(rag_engine.embedder, db_path=graph_path, min_freq=3)
+
+        from knowledge_gallery import GALLERY_PACKS
+        for pid in GALLERY_PACKS:
+            meta = gallery_manager._load_meta(pid)
+            if not meta or not meta.get("enabled"):
+                continue
+            cp = gallery_manager.packs_dir / pid / "chunks.jsonl"
+            if not cp.exists():
+                continue
+            chunks = [json.loads(l) for l in open(cp) if l.strip()]
+            if chunks:
+                builder.build_from_chunks(chunks, pack_id=pid)
+
+        # Also process user docs
+        if rag_engine._user_chunks:
+            builder.build_from_chunks(rag_engine._user_chunks, pack_id="user_docs")
+
+        # Reload graph index
+        graph_rag = GraphRAG(rag_engine, graph_index_dir=".")
+        _app_log.info(f"Graph rebuilt: {graph_rag.get_stats()}")
+    except Exception as e:
+        _app_log.error(f"Graph rebuild failed: {e}")
+
+
+@app.post("/v1/embeddings/reembed")
+async def reembed_all(auth: dict = Depends(verify_auth)):
+    """Re-embed all knowledge packs with the current embedding model. Runs in background."""
+    global _reembed_progress
+    if not rag_engine or not gallery_manager:
+        raise HTTPException(status_code=503, detail="RAG or gallery not available")
+    if _reembed_progress and _reembed_progress.get("status") == "processing":
+        return {"status": "already_running"}
+
+    model_name = rag_engine.embedder.model_id
+    from rag import EMBEDDING_MODELS
+    model_info = EMBEDDING_MODELS.get(model_name, {})
+
+    _reembed_progress = {
+        "status": "processing",
+        "phase": "starting",
+        "percent": 0,
+        "detail": "Preparing...",
+        "current_pack": "",
+        "packs_done": 0,
+        "packs_total": 0,
+        "chunks_done": 0,
+        "chunks_total": 0,
+        "model": model_info.get("name", model_name),
+    }
+
+    def _reembed():
+        global _reembed_progress
+        try:
+            from knowledge_gallery import GALLERY_PACKS
+            installed = [(pid, gallery_manager._load_meta(pid)) for pid in GALLERY_PACKS if gallery_manager._load_meta(pid)]
+            total_packs = len(installed)
+            _reembed_progress["packs_total"] = total_packs
+
+            # Count total chunks
+            total_chunks = 0
+            for pid, meta in installed:
+                chunks_path = gallery_manager.packs_dir / pid / "chunks.jsonl"
+                if chunks_path.exists():
+                    total_chunks += sum(1 for line in open(chunks_path) if line.strip())
+            _reembed_progress["chunks_total"] = total_chunks
+
+            chunks_done = 0
+            for pack_idx, (pid, meta) in enumerate(installed):
+                pack_dir = gallery_manager.packs_dir / pid
+                chunks_path = pack_dir / "chunks.jsonl"
+                if not chunks_path.exists():
+                    continue
+
+                pack_name = GALLERY_PACKS.get(pid, {}).get("name", pid)
+                _reembed_progress.update({
+                    "phase": "embedding",
+                    "current_pack": pack_name,
+                    "detail": f"Embedding {pack_name}...",
+                })
+
+                chunks = []
+                with open(chunks_path) as f:
+                    for line in f:
+                        if line.strip():
+                            chunks.append(json.loads(line))
+                if not chunks:
+                    continue
+
+                texts = [c["text"] for c in chunks]
+                all_emb = []
+                with gallery_manager._lock:
+                    for i in range(0, len(texts), 32):
+                        all_emb.append(rag_engine.embedder.embed(texts[i:i+32]))
+                        chunks_done += min(32, len(texts) - i)
+                        pct = round((chunks_done / total_chunks) * 90) if total_chunks > 0 else 0
+                        _reembed_progress.update({
+                            "percent": pct,
+                            "chunks_done": chunks_done,
+                            "detail": f"Embedding {pack_name} — {chunks_done}/{total_chunks} chunks",
+                        })
+
+                embeddings = np.vstack(all_emb)
+                np.save(pack_dir / "embeddings.npy", embeddings)
+                meta["embedding_model"] = model_name
+                gallery_manager._save_meta(pid, meta)
+                _reembed_progress["packs_done"] = pack_idx + 1
+
+            # Re-embed user docs
+            _reembed_progress.update({"percent": 92, "phase": "user_docs", "detail": "Re-indexing user documents..."})
+            docs_dir = Path(__file__).parent / "docs"
+            if docs_dir.exists():
+                rag_engine.load_directory(str(docs_dir))
+
+            _reembed_progress.update({"percent": 93, "phase": "rebuilding", "detail": "Rebuilding composite index..."})
+            rag_engine.rebuild_composite_index(gallery_manager)
+
+            _reembed_progress.update({"percent": 96, "phase": "graph", "detail": "Rebuilding knowledge graph..."})
+            _rebuild_graph()
+
+            _reembed_progress.update({"status": "complete", "percent": 100, "detail": "Done!"})
+            push_notification(
+                "SUCCESS", "Re-embedding complete",
+                f"{total_packs} packs + user docs re-embedded with {model_info.get('name', model_name)}. "
+                f"Total: {rag_engine.doc_count} chunks.",
+                "knowledge-full", "index",
+            )
+            time.sleep(5)
+            _reembed_progress = None
+
+        except Exception as e:
+            _reembed_progress = {"status": "error", "detail": str(e)}
+            push_notification("ERROR", "Re-embedding failed", str(e), "knowledge-full", "error")
+            time.sleep(5)
+            _reembed_progress = None
+
+    import threading
+    threading.Thread(target=_reembed, daemon=True).start()
+    push_notification("INFO", "Re-embedding started", f"Re-embedding all content with {model_info.get('name', model_name)}...", "knowledge-full", "index")
+    return {"status": "started", "model": model_name}
+
+
+@app.get("/v1/embeddings/reembed/progress")
+async def reembed_progress(auth: dict = Depends(verify_auth)):
+    """Get re-embed progress."""
+    if not _reembed_progress:
+        return {"status": "idle"}
+    return _reembed_progress
+
+
+@app.post("/v1/embeddings/{model_id}/activate")
+async def activate_embedding_model(model_id: str, auth: dict = Depends(verify_auth)):
+    """Switch the embedding model. Re-embeds all docs and knowledge packs."""
+    from rag import EMBEDDING_MODELS, set_configured_model, ONNXEmbedder
+    if model_id not in EMBEDDING_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unknown embedding model: {model_id}")
+
+    global rag_engine, skill_engine, gallery_manager
+    if not rag_engine:
+        raise HTTPException(status_code=503, detail="RAG engine not available")
+
+    current = rag_engine.embedder.model_id
+    if current == model_id:
+        return {"status": "already_active", "model": model_id}
+
+    try:
+        info = EMBEDDING_MODELS[model_id]
+        push_notification("INFO", f"Switching to {info['name']}", "Downloading model and re-embedding all content...", "model", "switch")
+
+        # Load new embedder
+        new_embedder = ONNXEmbedder(model_id)
+        rag_engine.embedder = new_embedder
+        set_configured_model(model_id)
+
+        # Re-embed user docs
+        docs_dir = Path(__file__).parent / "docs"
+        if docs_dir.exists():
+            rag_engine.load_directory(str(docs_dir))
+
+        # Update skill engine embedder
+        if skill_engine:
+            from skills import SkillEngine
+            skill_engine = SkillEngine(new_embedder)
+
+        # Update gallery manager embedder + re-embed installed packs
+        if gallery_manager:
+            gallery_manager.embedder = new_embedder
+            # Re-embed each installed pack
+            from knowledge_gallery import GALLERY_PACKS
+            for pack_id in GALLERY_PACKS:
+                meta = gallery_manager._load_meta(pack_id)
+                if not meta:
+                    continue
+                pack_dir = gallery_manager.packs_dir / pack_id
+                chunks_path = pack_dir / "chunks.jsonl"
+                if not chunks_path.exists():
+                    continue
+                # Load chunks and re-embed
+                chunks = []
+                with open(chunks_path) as f:
+                    for line in f:
+                        if line.strip():
+                            chunks.append(json.loads(line))
+                if chunks:
+                    texts = [c["text"] for c in chunks]
+                    all_emb = []
+                    for i in range(0, len(texts), 32):
+                        all_emb.append(new_embedder.embed(texts[i:i+32]))
+                    embeddings = np.vstack(all_emb)
+                    np.save(pack_dir / "embeddings.npy", embeddings)
+
+            # Rebuild composite index + graph
+            rag_engine.rebuild_composite_index(gallery_manager)
+            _rebuild_graph()
+
+        push_notification("SUCCESS", f"Switched to {info['name']}", f"All content re-embedded with {info['dims']}-dim vectors. Graph rebuilt.", "model", "switch")
+        return {"status": "switched", "model": model_id, "dims": info["dims"], "total_chunks": rag_engine.doc_count}
+
+    except Exception as e:
+        push_notification("ERROR", "Embedding switch failed", str(e), "model", "error")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Knowledge Gallery endpoints ──
+
+@app.get("/v1/gallery")
+async def list_gallery(auth: dict = Depends(verify_auth)):
+    """List all knowledge gallery packs with install/enable status."""
+    if not gallery_manager:
+        return {"packs": [], "total_chunks": 0}
+    packs = gallery_manager.list_packs()
+    total = sum(p["chunk_count"] for p in packs if p["enabled"])
+    return {"packs": packs, "total_chunks": total}
+
+
+@app.post("/v1/gallery/{pack_id}/install")
+async def install_gallery_pack(pack_id: str, auth: dict = Depends(verify_auth)):
+    """Start installing a knowledge pack (background download + processing)."""
+    if not gallery_manager:
+        raise HTTPException(status_code=503, detail="Gallery not available")
+    try:
+        result = gallery_manager.install_pack(pack_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/v1/gallery/{pack_id}")
+async def uninstall_gallery_pack(pack_id: str, auth: dict = Depends(verify_auth)):
+    """Uninstall a knowledge pack (delete all data)."""
+    if not gallery_manager:
+        raise HTTPException(status_code=503, detail="Gallery not available")
+    result = gallery_manager.uninstall_pack(pack_id)
+    if rag_engine:
+        rag_engine.rebuild_composite_index(gallery_manager)
+    # Remove pack graph index and rebuild
+    idx_file = Path(f"./knowledge_graph_{pack_id}_index.json")
+    if idx_file.exists():
+        idx_file.unlink()
+    if graph_rag:
+        import threading
+        threading.Thread(target=_rebuild_graph, daemon=True).start()
+    push_notification("INFO", "Knowledge pack removed", f"Pack uninstalled. Graph updated.", "knowledge-full", "delete")
+    return result
+
+
+@app.post("/v1/gallery/{pack_id}/toggle")
+async def toggle_gallery_pack(pack_id: str, request: Request, auth: dict = Depends(verify_auth)):
+    """Enable or disable an installed knowledge pack."""
+    if not gallery_manager:
+        raise HTTPException(status_code=503, detail="Gallery not available")
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    try:
+        result = gallery_manager.toggle_pack(pack_id, enabled)
+        if rag_engine:
+            count = rag_engine.rebuild_composite_index(gallery_manager)
+            result["total_chunks"] = count
+        # Rebuild graph in background
+        import threading
+        threading.Thread(target=_rebuild_graph, daemon=True).start()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/gallery/{pack_id}/progress")
+async def gallery_pack_progress(pack_id: str, auth: dict = Depends(verify_auth)):
+    """Get install progress for a knowledge pack."""
+    if not gallery_manager:
+        return {"status": "not_available"}
+    progress = gallery_manager.get_progress(pack_id)
+    if not progress:
+        return {"status": "not_installing"}
+    return progress
 
 
 @app.post("/v1/classify", response_model=ClassifyResponse)
@@ -699,12 +1425,46 @@ async def chat_stream(req: ChatRequest, auth: dict = Depends(verify_auth)):
         if result:
             tool_result = result
 
-    # RAG
+    # Route query to optimal strategy
+    route = {"strategy": "rag"}
+    if auto_mode_engine:
+        route = auto_mode_engine.route(req.message, has_rag=bool(rag_engine), has_knowledge_packs=bool(gallery_manager))
+
+    # RAG — hybrid retrieval with optional query decomposition (skip for simple greetings)
     rag_context = ""
     rag_sources = []
-    if req.use_rag and rag_engine:
-        results = rag_engine.retrieve(req.message, top_k=3)
-        if results and results[0]["score"] > 0.3:
+    results = []
+    if req.use_rag and rag_engine and route["strategy"] != "simple":
+        # Use graph-augmented retrieval for complex queries
+        if graph_rag and graph_rag.has_graph:
+            results = graph_rag.retrieve(req.message, top_k=5)
+        else:
+            results = rag_engine.retrieve(req.message, top_k=3)
+        has_good_results = results and results[0].get("dense_score", results[0].get("score", 0)) > 0.25
+
+        # Additional multi-hop decomposition for complex queries
+        if route["strategy"] == "reasoning" and has_good_results:
+            # Quick decomposition via keyword extraction — no LLM call needed
+            import re as _re
+            # Extract noun phrases / key terms for sub-queries
+            words = req.message.split()
+            if len(words) > 8:
+                # Split on conjunctions and question marks for sub-queries
+                sub_parts = _re.split(r'\band\b|\bbut\b|\balso\b|\?', req.message)
+                sub_parts = [s.strip() for s in sub_parts if len(s.strip()) > 10]
+                if len(sub_parts) > 1:
+                    all_results = list(results)  # start with original results
+                    seen = set(r["text"][:80] for r in results)
+                    for sub_q in sub_parts[:3]:
+                        sub_results = rag_engine.retrieve(sub_q, top_k=2)
+                        for r in sub_results:
+                            key = r["text"][:80]
+                            if key not in seen:
+                                seen.add(key)
+                                all_results.append(r)
+                    results = all_results[:6]  # Cap at 6 chunks for context
+
+        if results and results[0].get("dense_score", results[0].get("score", 0)) > 0.25:
             rag_context = rag_engine.format_context(results)
             rag_sources = list(set(r["source"] for r in results))
 
@@ -733,6 +1493,15 @@ async def chat_stream(req: ChatRequest, auth: dict = Depends(verify_auth)):
             skill_name = matched_skill["name"]
             effective_system = skill_engine.apply(matched_skill, req.system_prompt)
 
+    # For complex queries with RAG context, enhance the system prompt with grounding instructions
+    if route["strategy"] == "reasoning" and rag_context:
+        grounding = (
+            "\n\nIMPORTANT: Base your answer strictly on the retrieved documents below. "
+            "Cite specific facts from the sources. If the documents don't contain enough "
+            "information, say so honestly rather than guessing."
+        )
+        effective_system = (effective_system or "") + grounding
+
     # Web search
     web_results = []
     web_suggest = False
@@ -754,7 +1523,8 @@ async def chat_stream(req: ChatRequest, auth: dict = Depends(verify_auth)):
     def _generate_in_thread():
         _llm_lock.acquire()
         try:
-            q.put(f"data: {_json.dumps({'type':'meta','sentiment':sentiment,'tool_result':tool_result or None,'rag_sources':rag_sources,'auto_profile':auto_profile,'skill_used':skill_name,'web_results':web_results,'web_suggest':web_suggest})}\n\n")
+            _kg = _detect_knowledge_gap(req.message, results if req.use_rag and rag_engine else [], bool(rag_context))
+            q.put(f"data: {_json.dumps({'type':'meta','sentiment':sentiment,'tool_result':tool_result or None,'rag_sources':rag_sources,'auto_profile':auto_profile,'skill_used':skill_name,'web_results':web_results,'web_suggest':web_suggest,'knowledge_gap':_kg})}\n\n")
 
             token_count = 0
             t_start = time.perf_counter()
@@ -815,7 +1585,7 @@ async def chat_reason(req: ChatRequest, auth: dict = Depends(verify_auth)):
     rag_context = ""
     if req.use_rag and rag_engine:
         results = rag_engine.retrieve(req.message, top_k=3)
-        if results and results[0]["score"] > 0.3:
+        if results and results[0].get("dense_score", results[0].get("score", 0)) > 0.25:
             rag_context = rag_engine.format_context(results)
 
     engine = ReasoningEngine(compute_path.llm, rag_engine, template=compute_path.template)
@@ -873,12 +1643,38 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         if result:
             tool_result = result
 
-    # RAG retrieval
+    # Route query
+    route = {"strategy": "rag"}
+    if auto_mode_engine:
+        route = auto_mode_engine.route(req.message, has_rag=bool(rag_engine), has_knowledge_packs=bool(gallery_manager))
+
+    # RAG retrieval — hybrid with optional decomposition (skip for simple greetings)
     rag_context = ""
     rag_sources = []
-    if req.use_rag and rag_engine:
-        results = rag_engine.retrieve(req.message, top_k=3)
-        if results and results[0]["score"] > 0.3:
+    results = []
+    if req.use_rag and rag_engine and route["strategy"] != "simple":
+        # Graph-augmented retrieval for complex queries
+        if graph_rag and graph_rag.has_graph:
+            results = graph_rag.retrieve(req.message, top_k=5)
+        else:
+            results = rag_engine.retrieve(req.message, top_k=3)
+
+        # Multi-hop decomposition for complex queries
+        if route["strategy"] == "reasoning" and results:
+            import re as _re
+            sub_parts = _re.split(r'\band\b|\bbut\b|\balso\b|\?', req.message)
+            sub_parts = [s.strip() for s in sub_parts if len(s.strip()) > 10]
+            if len(sub_parts) > 1:
+                all_results = list(results)
+                seen = set(r["text"][:80] for r in results)
+                for sub_q in sub_parts[:3]:
+                    for r in rag_engine.retrieve(sub_q, top_k=2):
+                        if r["text"][:80] not in seen:
+                            seen.add(r["text"][:80])
+                            all_results.append(r)
+                results = all_results[:6]
+
+        if results and results[0].get("dense_score", results[0].get("score", 0)) > 0.25:
             rag_context = rag_engine.format_context(results)
             rag_sources = list(set(r["source"] for r in results))
 
@@ -932,6 +1728,13 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         if matched_skill:
             skill_name = matched_skill["name"]
             effective_system = skill_engine.apply(matched_skill, req.system_prompt)
+
+    # Grounding instructions for complex knowledge queries
+    if route["strategy"] == "reasoning" and rag_context:
+        effective_system = (effective_system or "") + (
+            "\n\nIMPORTANT: Base your answer strictly on the retrieved documents. "
+            "Cite specific facts. If the documents don't cover the question fully, say so honestly."
+        )
 
     # Web search — if enabled or auto-suggested
     web_results = []
@@ -1013,6 +1816,7 @@ async def chat(req: ChatRequest, auth: dict = Depends(verify_api_key)):
         skill_used=skill_name,
         web_results=web_results,
         web_suggest=web_suggest,
+        knowledge_gap=_detect_knowledge_gap(req.message, results if req.use_rag and rag_engine else [], bool(rag_context)),
     )
 
 

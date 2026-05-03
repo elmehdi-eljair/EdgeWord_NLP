@@ -1,0 +1,123 @@
+This is exactly the kind of honest report a serious team produces, and the questions are good ones. Before I give recommendations, I need to be direct about something: the team has built the system correctly, but the *eval baseline numbers* tell us the problem is upstream of the graph. Let me walk through this carefully because the diagnosis matters.
+
+## First — The Most Important Number in the Report
+
+The baseline R@10 is **9.5%**. This is not a graph problem. This is a fundamental retrieval problem.
+
+Production RAG systems on knowledge-pack corpora with hybrid retrieval typically achieve R@10 in the 40-70% range. A 9.5% baseline means that even with perfect graph augmentation, you cannot reach reasonable absolute performance — you'd need roughly 7x improvement over baseline to hit production-quality retrieval. No graph layer delivers 7x lift. The committee's test showed 1.18x lift on a corpus where baseline was already 57.5%.
+
+The team's Q7 is the right instinct and I am going to say it directly: **before any more graph tuning, audit the eval set and the baseline retrieval.** Something is broken upstream. Possible causes, in order of likelihood:
+
+**The eval set's `answer_chunks` may be too narrowly specified.** If a multi-hop query has 8 ground-truth chunks but only 1-2 of them are actually retrievable by *any* reasonable system because the others contain only weak partial information, R@10 collapses. The baseline 6% R@5 on single-hop queries is suspicious — a working hybrid retrieval system should hit 40-60%+ R@5 on single-hop questions. Either the queries don't match the corpus content well, or the answer_chunks list is too generous.
+
+**The chunking strategy may be wrong for the content.** If chunks are too small (e.g., individual sentences), they lack context for retrieval. If too large (e.g., full pages), embeddings become diffuse. The team didn't report chunk size — this needs to be checked.
+
+**BGE Small may be underperforming on this domain.** BGE Small is a general-purpose model. On medical text, the medical-specific BGE variants or BMRetriever-style domain-specific embedders typically deliver 15-25 percentage points more recall. This is a known issue with general embedders on medical content.
+
+**The eval queries may not actually be answerable from the corpus.** This sounds obvious but happens constantly in practice. If your eval set was written by looking at queries users ask EdgeWord, but those queries require knowledge that isn't in sciq or medmcqa, retrieval cannot succeed regardless of method.
+
+The committee made an error in the implementation guide that contributed to this confusion: the +10.6 percentage point lift from the synthetic test was *additive on top of a 57.5% baseline*. That same lift on a 9.5% baseline does not transfer linearly because the failure modes are different. On a high-baseline corpus, graphs help find the missing 30-40% that hybrid misses. On a low-baseline corpus, hybrid is *already failing on the easy stuff*, and the graph cannot fix that.
+
+## Second — The Graph Issues Are Real But Secondary
+
+The team's diagnosis in Section 4 is sharp and largely correct. Let me address each:
+
+**Problem 1 (graph too dense): Confirmed.** 1.2M edges for 22K entities is 55x denser than what production GraphRAG systems run. Microsoft GraphRAG typically produces ~5-10 edges per entity on similar corpus sizes. The team is right that the edge weight threshold needs to go up — likely to weight ≥ 5, which the team correctly identified would prune ~80% of edges.
+
+**Problem 2 (n-gram noise): Confirmed and severe.** The clustering at 0.85 doesn't help here because noise phrases like "the cell" and "this type" have legitimate-looking embeddings. They survive frequency filtering and clustering, then create thousands of meaningless edges. This is the fundamental limitation of n-gram extraction without grammatical or semantic typing.
+
+**Problem 3 (co-occurrence is weak): Confirmed.** This is the literature's well-known critique of co-occurrence graphs. The fix is typed relations, which only LLM extraction provides.
+
+**Problem 4 (expansion doesn't surface new info): Confirmed by the data.** 21/25 queries unchanged tells you the graph isn't reaching beyond what FAISS already finds. This is consistent with co-occurrence creating topically-redundant edges.
+
+So the graph diagnosis is correct. But fixing the graph won't fix the 9.5% baseline. Both problems need addressing.
+
+## Direct Answers to the Team's Questions
+
+**Q1 (graph too dense):** Yes. Raise `edge_weight ≥ 5` immediately. This is a one-line change and will reduce noise dramatically. But this alone won't move the needle much because the underlying entities are still noisy.
+
+**Q2 (n-gram approach wrong for corpus size):** Yes, partially. N-gram extraction works on small clean corpora and breaks at scale. The 372K raw candidates → 10K entities pipeline is producing too many false entities. LLM extraction will produce dramatically cleaner entities (estimate 500-2000 entities per pack instead of 10K), with typed relations, fundamentally changing the graph structure. The density problem largely disappears because LLM extraction doesn't produce "the cell" as an entity.
+
+**Q3 (max_freq cap):** Yes, add this. Drop entities appearing in >5% of chunks. This is a stopgap until LLM extraction replaces the n-gram approach. It will help but won't fix the underlying noise problem.
+
+**Q4 (expansion strategy wrong):** The strategy isn't wrong, the input is. Seed-and-expand works when the entities are real and the edges are typed. With noisy n-gram entities and untyped co-occurrence edges, no expansion strategy can produce clean results. Don't tune the expansion logic harder — fix the entities.
+
+**Q5 (query entity embedding approach):** Worth trying as a quick experiment, but I don't expect it to work well in this context. The query-entity-similarity approach has the same fundamental problem: if your entities are noisy, embedding queries against them produces noisy matches. The committee's empirical test of this in an earlier session showed it works only when entities are clean and structured.
+
+**Q6 (skip to Phase 2):** This is the real question and my answer is **yes, but with a critical caveat**. Skip to Phase 2, but **first audit the eval set and baseline**. If the 9.5% baseline is real and not an eval bug, even perfect LLM extraction won't get you to good absolute numbers. You have to fix the upstream problem first.
+
+**Q7 (eval set representative):** This is the question I would have led with. The team should answer Q7 before answering Q6. Section 9 below is the protocol for this.
+
+## What to Do — Prioritized Action Plan
+
+The team should not continue tuning the current graph. The diagnosis is clear: the graph cannot rescue a 9.5% baseline, and the n-gram approach is producing structurally noisy entities that no amount of expansion tuning fixes. Here is the order of operations:
+
+### Step 1 (This Week): Audit the Eval Set and Baseline
+
+This is the highest-leverage work right now and has nothing to do with graphs. Take 5 multi-hop queries from the eval set. For each one:
+
+Manually inspect the corpus and identify which chunks *actually* contain answer information. Compare against the labeled `answer_chunks`. If the manual answer set is meaningfully different from the labeled set, the eval set is the problem.
+
+Run the baseline hybrid retrieval and look at what it returns versus the manual answer set. If the retrieval is finding semantically reasonable chunks but they're not in `answer_chunks`, the eval is too strict. If the retrieval is finding genuinely irrelevant chunks, the embedder or chunking is the problem.
+
+For the queries where retrieval is poor, examine the chunks themselves. Are they the right size (typically 200-500 tokens)? Are they coherent passages? Or are they fragmented text that loses context?
+
+This audit takes 1-2 days and will tell you whether you have a 9.5% baseline because the system is genuinely broken, or because the measurement is broken. Without this, every subsequent decision is guesswork.
+
+### Step 2 (Next Week, conditional on Step 1): Fix Whichever is Broken
+
+If the eval set is too strict, rebuild it with looser answer criteria — chunks that contain *any* of the necessary information, not just the complete answer.
+
+If the chunking is wrong, re-chunk with a different strategy. For Q&A content like medmcqa, each Q&A pair should typically be one chunk. For prose content like sciq, semantic chunking at 300-500 tokens with overlap is standard.
+
+If the embedder is the bottleneck, evaluate alternatives. For medical content specifically, BMRetriever, MedCPT, or PubMedBERT-derived embedders typically outperform BGE Small by 15-25 points. Only do this if Steps 1 and 2 don't recover the baseline.
+
+The target is a baseline R@10 of at least 30-40% before adding any graph layer. Below that, the graph cannot demonstrate value because the floor is too low to measure lift.
+
+### Step 3 (Weeks 3-4): Skip to Phase 2 — LLM Extraction
+
+Once the baseline is reasonable, skip Phase 1's n-gram approach entirely. The team's diagnosis showed it doesn't scale to 13K-chunk corpora cleanly. Build LLM extraction directly per the original Phase 2 spec.
+
+Concrete prompt structure that works (this is what GraphRAG, HippoRAG, and LightRAG converge on):
+
+```
+You are extracting a knowledge graph from text. Read this passage and output JSON only.
+
+Extract:
+1. Named entities (specific things mentioned by name)
+2. Relationships between those entities that are explicitly stated
+
+Rules:
+- Only extract specific entities, not general concepts ("metformin" yes, "the drug" no)
+- Only extract relationships explicitly stated in the text
+- Use canonical forms for entity names (e.g., "type 2 diabetes" not "T2DM")
+- Each relationship must connect two extracted entities
+
+Output:
+{
+  "entities": [{"name": "...", "type": "..."}],
+  "relations": [{"subject": "...", "predicate": "...", "object": "..."}]
+}
+
+Text: """{chunk}"""
+```
+
+Critical change from the original Phase 2 spec: do not run extraction on every chunk independently. Run it in batches with deduplication checking. After processing each batch of 100 chunks, take all extracted entities, deduplicate at the embedding level (same 0.85 threshold), and continue. This produces a clean entity set as you go rather than a messy one needing post-hoc cleanup.
+
+Expect for your corpus: ~500-2000 entities per pack (vs. 10K from n-gram), ~3000-8000 edges per pack (vs. 600K), entities mostly typed and clean, edges mostly meaningful typed relations.
+
+This will take 24-48 hours per pack with a 1B-3B local model. Run overnight. Make it resumable.
+
+### Step 4 (Week 5): Evaluate
+
+Run the eval set against the LLM-extracted graph. Acceptance criterion: R@10 lifts at least 5 percentage points above the post-Step-2 baseline. If the baseline is now 40% (after fixing upstream issues), Phase 2 should bring it to at least 45%. If the lift is smaller, the graph isn't justified for this corpus and you ship without it.
+
+## On the Larger Lesson
+
+The team's report is good engineering work. They built the system correctly, measured honestly, diagnosed clearly, and asked the right questions. The committee made two mistakes that this report exposed:
+
+The synthetic test that showed +10.6 percentage points was on a corpus too small and too clean to predict real-world performance at 13K chunks. The committee should have caveated that more strongly. The recommendation to "ship Phase 1 first" was based on that synthetic result and turned out to be wrong for this scale.
+
+The implementation guide didn't sufficiently emphasize that the eval set quality determines everything downstream. A 9.5% baseline should have triggered an immediate "stop, audit upstream" response, not graph tuning. This is on me — the guide should have included an explicit "if baseline R@10 is below 25%, stop and audit before proceeding."
+
+Both lessons are now in the team's hands. The honest path forward is upstream audit first, then LLM extraction, skipping the n-gram middle phase that the empirical evidence shows doesn't scale. The report's diagnosis is correct; act on it.

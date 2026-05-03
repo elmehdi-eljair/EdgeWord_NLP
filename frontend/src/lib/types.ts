@@ -25,6 +25,7 @@ export interface Message {
   stageLabel?: string;
   webResults?: {title:string;url:string;snippet:string}[];
   webSuggest?: boolean;
+  knowledgeGap?: { message: string; suggested_pack?: { id: string; name: string; description: string; category: string } | null };
 }
 
 export interface Attachment {

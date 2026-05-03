@@ -82,3 +82,39 @@ class AutoMode:
 
         # Default: chat
         return {**PARAM_PROFILES["chat"], "profile": "chat"}
+
+    def route(self, message: str, has_rag: bool = True, has_knowledge_packs: bool = False) -> dict:
+        """Route a query to the optimal processing strategy.
+        Returns dict with 'strategy' key: 'simple', 'rag', 'reasoning', 'creative'."""
+        msg_lower = message.lower()
+        word_count = len(message.split())
+
+        # Creative/open-ended → skip RAG, direct generation
+        creative_signals = ["write me", "compose", "poem", "story", "imagine", "fiction", "lyrics", "brainstorm"]
+        if any(s in msg_lower for s in creative_signals):
+            return {"strategy": "creative", "reason": "Creative task — direct generation"}
+
+        # Simple greetings/chat → fast response, minimal RAG
+        if word_count <= 5 and any(s in msg_lower for s in ["hello", "hi", "hey", "thanks", "ok", "bye", "good"]):
+            return {"strategy": "simple", "reason": "Simple greeting"}
+
+        # Complex multi-part or multi-hop → full reasoning chain
+        complex_signals = [
+            " and ", " but also ", " compare ", " versus ", " relationship between ",
+            " how does ", " why does ", " what happens if ", " what are the risks ",
+            " explain the difference ", " step by step ",
+        ]
+        is_complex = (
+            word_count >= 15
+            or any(s in msg_lower for s in complex_signals)
+            or message.count("?") > 1
+        )
+        if is_complex and has_rag:
+            return {"strategy": "reasoning", "reason": "Complex query — multi-step reasoning with decomposition"}
+
+        # Knowledge-grounded factual → hybrid RAG
+        if has_rag:
+            return {"strategy": "rag", "reason": "Knowledge query — hybrid retrieval"}
+
+        # Fallback
+        return {"strategy": "simple", "reason": "General query"}

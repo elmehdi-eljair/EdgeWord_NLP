@@ -364,6 +364,53 @@ export async function getNotifications() {
   return res.json();
 }
 
+export async function markNotificationsRead() {
+  const res = await fetch(`${API_BASE}/v1/notifications/read`, {
+    method: "POST", headers: headers(),
+  });
+  return res.json();
+}
+
+export async function clearNotifications() {
+  const res = await fetch(`${API_BASE}/v1/notifications`, {
+    method: "DELETE", headers: headers(),
+  });
+  return res.json();
+}
+
+// ── Knowledge Gallery ──
+
+export async function listGalleryPacks() {
+  const res = await fetch(`${API_BASE}/v1/gallery`, { headers: headers() });
+  return res.json();
+}
+
+export async function installGalleryPack(packId: string) {
+  const res = await fetch(`${API_BASE}/v1/gallery/${packId}/install`, {
+    method: "POST", headers: headers(),
+  });
+  return res.json();
+}
+
+export async function uninstallGalleryPack(packId: string) {
+  const res = await fetch(`${API_BASE}/v1/gallery/${packId}`, {
+    method: "DELETE", headers: headers(),
+  });
+  return res.json();
+}
+
+export async function toggleGalleryPack(packId: string, enabled: boolean) {
+  const res = await fetch(`${API_BASE}/v1/gallery/${packId}/toggle`, {
+    method: "POST", headers: headers(), body: JSON.stringify({ enabled }),
+  });
+  return res.json();
+}
+
+export async function galleryPackProgress(packId: string) {
+  const res = await fetch(`${API_BASE}/v1/gallery/${packId}/progress`, { headers: headers() });
+  return res.json();
+}
+
 // ── API Keys ──
 
 export async function listApiKeys() {
@@ -374,6 +421,80 @@ export async function listApiKeys() {
 export async function createApiKey(name: string, rateLimit = 60) {
   const res = await fetch(`${API_BASE}/v1/keys`, {
     method: "POST", headers: headers(), body: JSON.stringify({ name, rate_limit: rateLimit }),
+  });
+  return res.json();
+}
+
+// ── Skills ──
+
+export async function listSkills() {
+  const res = await fetch(`${API_BASE}/v1/skills`, { headers: headers() });
+  return res.json();
+}
+
+export async function createSkill(data: Record<string, any>) {
+  const res = await fetch(`${API_BASE}/v1/skills`, {
+    method: "POST", headers: headers(), body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function updateSkill(skillId: string, data: Record<string, any>) {
+  const res = await fetch(`${API_BASE}/v1/skills/${skillId}`, {
+    method: "PUT", headers: headers(), body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function deleteSkill(skillId: string) {
+  const res = await fetch(`${API_BASE}/v1/skills/${skillId}`, {
+    method: "DELETE", headers: headers(),
+  });
+  return res.json();
+}
+
+export async function toggleSkill(skillId: string, enabled: boolean) {
+  const res = await fetch(`${API_BASE}/v1/skills/${skillId}/toggle`, {
+    method: "POST", headers: headers(), body: JSON.stringify({ enabled }),
+  });
+  return res.json();
+}
+
+// ── Logs ──
+
+export async function getLogs(opts: { after?: number; level?: string; source?: string; search?: string; limit?: number } = {}) {
+  const params = new URLSearchParams();
+  if (opts.after) params.set("after", String(opts.after));
+  if (opts.level) params.set("level", opts.level);
+  if (opts.source) params.set("source", opts.source);
+  if (opts.search) params.set("search", opts.search);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const res = await fetch(`${API_BASE}/v1/logs?${params}`, { headers: headers() });
+  return res.json();
+}
+
+// ── Embeddings ──
+
+export async function listEmbeddingModels() {
+  const res = await fetch(`${API_BASE}/v1/embeddings`, { headers: headers() });
+  return res.json();
+}
+
+export async function reembedAll() {
+  const res = await fetch(`${API_BASE}/v1/embeddings/reembed`, {
+    method: "POST", headers: headers(),
+  });
+  return res.json();
+}
+
+export async function reembedProgress() {
+  const res = await fetch(`${API_BASE}/v1/embeddings/reembed/progress`, { headers: headers() });
+  return res.json();
+}
+
+export async function activateEmbeddingModel(modelId: string) {
+  const res = await fetch(`${API_BASE}/v1/embeddings/${modelId}/activate`, {
+    method: "POST", headers: headers(),
   });
   return res.json();
 }

@@ -193,6 +193,7 @@
 @keyframes settle { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 @keyframes livepulse { 0%,100%{opacity:1} 50%{opacity:.5} }
 @keyframes blink { 50%{opacity:0} }
+@keyframes think-dot { 0%,80%,100%{transform:scale(.4);opacity:.3} 40%{transform:scale(1);opacity:1} }
 @keyframes gemini-pulse { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--md-primary) 40%,transparent)} 50%{box-shadow:0 0 0 6px transparent} }
 
 /* ── Scrollbar ── */

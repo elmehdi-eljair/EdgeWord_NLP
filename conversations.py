@@ -72,8 +72,11 @@ class ConversationStore:
                 self.conn.execute(f"ALTER TABLE user_settings ADD COLUMN {col} DEFAULT {default}")
             except Exception:
                 pass
-        # Migrate messages table for reasoning/auto/skills
-        for col, default in [("reasoning_json", "NULL"), ("auto_profile", "NULL"), ("skill_used", "NULL")]:
+        # Migrate messages table for new fields
+        for col, default in [
+            ("reasoning_json", "NULL"), ("auto_profile", "NULL"), ("skill_used", "NULL"),
+            ("knowledge_gap_json", "NULL"), ("web_results_json", "NULL"), ("web_suggest", "0"),
+        ]:
             try:
                 self.conn.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT DEFAULT {default}")
             except Exception:
@@ -87,8 +90,8 @@ class ConversationStore:
             """INSERT INTO messages
                (user_id, session_id, role, text, sentiment_json, rag_sources_json,
                 tool_result, tokens, tps, ttft, total_s, cached, attachments_json, timestamp,
-                reasoning_json, auto_profile, skill_used)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                reasoning_json, auto_profile, skill_used, knowledge_gap_json, web_results_json, web_suggest)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id, session_id, msg["role"], msg["text"],
                 json.dumps(msg.get("sentiment")) if msg.get("sentiment") else None,
@@ -101,6 +104,9 @@ class ConversationStore:
                 json.dumps(msg.get("reasoning")) if msg.get("reasoning") else None,
                 msg.get("autoProfile"),
                 msg.get("skillUsed"),
+                json.dumps(msg.get("knowledgeGap")) if msg.get("knowledgeGap") else None,
+                json.dumps(msg.get("webResults")) if msg.get("webResults") else None,
+                "1" if msg.get("webSuggest") else "0",
             ),
         )
         self.conn.commit()
@@ -144,6 +150,12 @@ class ConversationStore:
                 msg["autoProfile"] = row["auto_profile"]
             if row["skill_used"]:
                 msg["skillUsed"] = row["skill_used"]
+            if row["knowledge_gap_json"]:
+                msg["knowledgeGap"] = json.loads(row["knowledge_gap_json"])
+            if row["web_results_json"]:
+                msg["webResults"] = json.loads(row["web_results_json"])
+            if row["web_suggest"] and row["web_suggest"] != "0":
+                msg["webSuggest"] = True
         except (IndexError, KeyError):
             pass
         return msg
